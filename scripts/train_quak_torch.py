@@ -78,6 +78,7 @@ def main(args):
             optimizer.zero_grad()
             output = AE(batch)
             loss = loss_fn(batch, output)
+            #print(output)
             epoch_train_loss += loss.item()
             loss.backward()
             optimizer.step()
