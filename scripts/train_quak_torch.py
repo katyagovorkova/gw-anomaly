@@ -10,7 +10,7 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import time
 
-from models import (LSTM_AE)
+from models import (CONV_LSTM_AE)
 
 import sys
 import os.path
@@ -40,10 +40,15 @@ def main(args):
         print(f"Using device {device}")
 
     # create the model
-    AE = LSTM_AE(num_ifos=NUM_IFOS, 
-                num_timesteps=SEG_NUM_TIMESTEPS,
-                BOTTLENECK=BOTTLENECK,
-                FACTOR=FACTOR).to(device)
+    #AE = LSTM_AE(num_ifos=NUM_IFOS, 
+    #            num_timesteps=SEG_NUM_TIMESTEPS,
+    #            BOTTLENECK=BOTTLENECK,
+    #            FACTOR=FACTOR).to(device)
+    
+    AE = CONV_LSTM_AE(input_dims=(100, 2), encoding_dim=BOTTLENECK,
+                      kernel=(2, 1), stride=(2, 2),
+                       h_conv_channels=[4, 4], h_lstm_channels=[32, 32]).to(device)
+    
     optimizer = optim.Adam(AE.parameters())
     scheduler = ReduceLROnPlateau(optimizer, 'min')
     if LOSS == "MAE":
