@@ -10,7 +10,8 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import time
 
-from models import (CONV_LSTM_AE)
+#from models import (LSTM_AE, TransformerAutoencoder)
+from models import TranAD_Basic, TranAD
 
 import sys
 import os.path
@@ -44,11 +45,14 @@ def main(args):
     #            num_timesteps=SEG_NUM_TIMESTEPS,
     #            BOTTLENECK=BOTTLENECK,
     #            FACTOR=FACTOR).to(device)
+
+
+    #AE = CONV_LSTM_AE(input_dims=(1024, 2), encoding_dim=BOTTLENECK,
+    #                  kernel=(2, 1), stride=(2, 2),
+    #                   h_conv_channels=[4, 4], h_lstm_channels=[16, 16]).to(device)
     
-    AE = CONV_LSTM_AE(input_dims=(100, 2), encoding_dim=BOTTLENECK,
-                      kernel=(2, 1), stride=(2, 2),
-                       h_conv_channels=[4, 4], h_lstm_channels=[32, 32]).to(device)
-    
+    AE = TranAD(100).to(device)
+
     optimizer = optim.Adam(AE.parameters())
     scheduler = ReduceLROnPlateau(optimizer, 'min')
     if LOSS == "MAE":
@@ -66,10 +70,17 @@ def main(args):
     validation_data = torch.from_numpy(validation_data).float().to(device)
 
     dataloader = []
+    dataloader_val = []
     N_batches = len(train_data) // BATCH_SIZE
     for i in range(N_batches-1):
         start, end = i*BATCH_SIZE, (i+1) * BATCH_SIZE
         dataloader.append(train_data[start:end])
+
+    N_batches_val = len(validation_data) // BATCH_SIZE
+    validation_data = validation_data[:int((N_batches_val-1) * BATCH_SIZE)]
+    for i in range(N_batches_val-1):
+        start, end = i*BATCH_SIZE, (i+1) * BATCH_SIZE
+        dataloader_val.append(validation_data[start:end])
 
     training_history = {
         'train_loss': [],
@@ -79,18 +90,28 @@ def main(args):
     for epoch_num in range(EPOCHS):
         ts = time.time()
         epoch_train_loss = 0
+        AE.train()
         for batch in dataloader:
             optimizer.zero_grad()
             output = AE(batch)
             loss = loss_fn(batch, output)
+            del batch
             #print(output)
             epoch_train_loss += loss.item()
             loss.backward()
             optimizer.step()
         epoch_train_loss /= N_batches
         training_history['train_loss'].append(epoch_train_loss)
+        AE.eval()
+        validation_pred = []
+        with torch.no_grad():
+            for batch in dataloader_val:
+                output = AE(batch)
+                validation_pred.append(output)
+        
+        validation_pred = torch.cat(validation_pred, dim=0)
         validation_loss = loss_fn(validation_data,
-                                AE(validation_data))
+                                validation_pred)
         training_history['val_loss'].append(validation_loss.item())
         scheduler.step(validation_loss)
 

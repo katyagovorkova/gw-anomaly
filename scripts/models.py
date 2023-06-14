@@ -1,313 +1,256 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import transpose as torchtranspose
-from math import floor
-from functools import reduce
-import torch
-
-class DNN_AE(nn.Module):
-    def __init__(self, num_ifos, num_timesteps, BOTTLENECK, FACTOR):
-        super(DNN_AE, self).__init__()
-        print("WARNING: Change this with Eric's actual LSTM model!")
-        self.num_timesteps = num_timesteps
-        self.num_ifos = num_ifos
-        self.Conv1 = nn.Conv1d(in_channels = num_ifos, out_channels = 5, kernel_size=5, padding='same')
-        self.Linear1 = nn.Linear(num_timesteps*5, 100)
-        self.Linear2 = nn.Linear(100, BOTTLENECK)
-        self.Linear3 = nn.Linear(BOTTLENECK, num_timesteps*5)
-        self.Conv2 = nn.Conv1d(in_channels=5, out_channels = 2, kernel_size = 5, padding = 'same')
-        
-    def forward(self, x):
-        batch_size = x.shape[0]
-        x = F.relu(self.Conv1(x))
-        x = x.view(-1, self.num_timesteps*5)
-        x = F.tanh(self.Linear1(x))
-        x = F.tanh(self.Linear2(x))
-        x = F.tanh(self.Linear3(x))
-        x = x.view(batch_size, 5, self.num_timesteps)
-        x = self.Conv2(x)
-        return x
-
-
-class Encoder(nn.Module):
-    def __init__(self, input_dim, out_dim, h_dims, h_activ, out_activ):
-        super(Encoder, self).__init__()
-
-        layer_dims = [input_dim] + h_dims + [out_dim]
-        self.num_layers = len(layer_dims) - 1
-        self.layers = nn.ModuleList()
-        for index in range(self.num_layers):
-            layer = nn.LSTM(
-                input_size=layer_dims[index],
-                hidden_size=layer_dims[index + 1],
-                num_layers=1,
-                batch_first=True,
-            )
-            self.layers.append(layer)
-
-        self.h_activ, self.out_activ = h_activ, out_activ
-
-    def forward(self, x):
-        x = x.unsqueeze(0)
-        for index, layer in enumerate(self.layers):
-            x, (h_n, c_n) = layer(x)
-
-            if self.h_activ and index < self.num_layers - 1:
-                x = self.h_activ(x)
-            elif self.out_activ and index == self.num_layers - 1:
-                return self.out_activ(h_n).squeeze()
-
-        return h_n.squeeze()
-
-
-class Decoder(nn.Module):
-    def __init__(self, input_dim, out_dim, h_dims, h_activ):
-        super(Decoder, self).__init__()
-
-        layer_dims = [input_dim] + h_dims + [h_dims[-1]]
-        self.num_layers = len(layer_dims) - 1
-        self.layers = nn.ModuleList()
-        for index in range(self.num_layers):
-            layer = nn.LSTM(
-                input_size=layer_dims[index],
-                hidden_size=layer_dims[index + 1],
-                num_layers=1,
-                batch_first=True,
-            )
-            self.layers.append(layer)
-
-        self.h_activ = h_activ
-        self.dense_matrix = nn.Parameter(
-            torch.rand((layer_dims[-1], out_dim), dtype=torch.float), requires_grad=True
-        )
-
-    def forward(self, x, seq_len):
-        x = x.repeat(seq_len, 1).unsqueeze(0)
-        for index, layer in enumerate(self.layers):
-            x, (h_n, c_n) = layer(x)
-
-            if self.h_activ and index < self.num_layers - 1:
-                x = self.h_activ(x)
-
-        return torch.mm(x.squeeze(0), self.dense_matrix)
-
-
-######
-# MAIN
-######
-
-
-class LSTM_AE(nn.Module):
-    def __init__(
-        self,
-        input_dim,
-        encoding_dim,
-        h_dims=[],
-        h_activ=nn.Sigmoid(),
-        out_activ=nn.Tanh(),
-    ):
-        super(LSTM_AE, self).__init__()
-
-        self.encoder = Encoder(input_dim, encoding_dim, h_dims, h_activ, out_activ)
-        self.decoder = Decoder(encoding_dim, input_dim, h_dims[::-1], h_activ)
-
-    def forward(self, x):
-        seq_len = x.shape[0]
-        x = self.encoder(x)
-        x = self.decoder(x, seq_len)
-
-        return x
-
-class Flatten(nn.Module):
-    def __init__(self):
-        super(Flatten, self).__init__()
-
-    def forward(self, input):
-        return input.view(input.size(0), -1).squeeze()
-
-
-class UnFlatten(nn.Module):
-    def __init__(self, in_channels, input_dims):
-        super(UnFlatten, self).__init__()
-
-        self.in_channels, self.input_dims = in_channels, input_dims
-
-    def forward(self, x):
-        return x.reshape((1, self.in_channels, *self.input_dims))
-
-
-class ConvUnit(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel, stride, dim):
-        super(ConvUnit, self).__init__()
-
-        # TODO: Handle dim == 1
-        conv = nn.Conv3d if dim == 3 else nn.Conv2d
-        self.conv = conv(
-            in_channels,
-            out_channels,
-            kernel_size=kernel,
-            stride=stride
-        )
-        self.relu = nn.ReLU()
-
-    def forward(self, x):
-        x = self.conv(x)
-        x = self.relu(x)
-
-        return x
-
-
-class DeConvUnit(nn.Module):
-    def __init__(self, in_channels, out_channels, kernel, stride, dim):
-        super(DeConvUnit, self).__init__()
-
-        # TODO: Handle dim == 1
-        deconv = nn.ConvTranspose3d if dim == 3 else nn.ConvTranspose2d
-        self.deconv = deconv(
-            in_channels,
-            out_channels,
-            kernel_size=kernel,
-            stride=stride
-        )
-        self.relu = nn.ReLU()
-
-    def forward(self, x, output_size):
-        x = self.deconv(x, output_size=output_size)
-        # x = self.relu(x)
-
-        return x
-
-
-###########
-# UTILITIES
-###########
-
-
-def compute_output_dim(num_layers, input_dim, kernel, stride, out_dims=[]):
-    if not num_layers:
-        return out_dims
-
-    # Guide to convolutional arithmetic: https://arxiv.org/pdf/1603.07285.pdf
-    out_dim = floor((input_dim - kernel) / stride) + 1
-    out_dims.append(out_dim)
-
-    return compute_output_dim(num_layers - 1, out_dim, kernel, stride, out_dims)
-
-
-######
-# MAIN
-######
-
-
-class CONV_AE(nn.Module):
-    def __init__(self, input_dims, encoding_dim, kernel, stride, in_channels=1,
-                 h_channels=[1]):
-        super(CONV_AE, self).__init__()
-
-        conv_dim = len(input_dims)
-        all_channels = [in_channels] + h_channels
-        num_layers = len(all_channels) - 1
-
-        if isinstance(kernel, int):
-            kernel = (kernel, ) * conv_dim
-        if isinstance(stride, int):
-            stride = (stride, ) * conv_dim
-
-        out_dims = []
-        for i, k, s in zip(input_dims, kernel, stride):
-            out_dims.append(compute_output_dim(num_layers, i, k, s, []))
-        out_dims = [input_dims] + list(zip(*out_dims))
-
-        self.out_dims = out_dims[::-1]
-        out_dims = self.out_dims[0]
-        flat_dim = all_channels[-1] * reduce(lambda x, y: x * y, out_dims)
-
-        # Construct encoder and decoder units
-        encoder_layers = []
-        self.decoder_layers = nn.ModuleList([
-            nn.Linear(encoding_dim, flat_dim),
-            UnFlatten(all_channels[-1], out_dims)
-        ])
-        for index in range(num_layers):
-            conv_layer = ConvUnit(
-                in_channels=all_channels[index],
-                out_channels=all_channels[index + 1],
-                kernel=kernel,
-                stride=stride,
-                dim=conv_dim
-            )
-            deconv_layer = DeConvUnit(
-                in_channels=all_channels[-index - 1],
-                out_channels=all_channels[-index - 2],
-                kernel=kernel,
-                stride=stride,
-                dim=conv_dim
-            )
-
-            encoder_layers.append(conv_layer)
-            self.decoder_layers.append(deconv_layer)
-
-        encoder_layers.extend([Flatten(),
-                               nn.Linear(flat_dim, encoding_dim)])
-        self.encoder = nn.Sequential(*encoder_layers)
-
-    def decoder(self, x):
-        for index, layer in enumerate(self.decoder_layers):
-            if isinstance(layer, DeConvUnit):
-                x = layer(x, output_size=self.out_dims[1:][index - 2])
-            else:
-                x = layer(x)
-
-        return x
-
-    def forward(self, x):
-        x = self.encoder(x)
-        x = self.decoder(x)
-
-        return x
-    
-
-class CONV_LSTM_AE(nn.Module):
-    def __init__(self, input_dims, encoding_dim, kernel, stride=1,
-                 h_conv_channels=[1], h_lstm_channels=[]):
-        super(CONV_LSTM_AE, self).__init__()
-
-        self.input_dims = input_dims
-        self.conv_enc_dim = sum(input_dims)
-
-        self.conv_ae = CONV_AE(
-            input_dims,
-            self.conv_enc_dim,
-            kernel,
-            stride,
-            h_channels=h_conv_channels
-        )
-        self.lstm_ae = LSTM_AE(
-            self.conv_enc_dim,
-            encoding_dim,
-            h_lstm_channels
-        )
-
-    def encoder(self, x):
-        n_elements, encodings = x.shape[0], []
-        for i in range(n_elements):
-            element = x[i].unsqueeze(0).unsqueeze(0)
-            encodings.append(self.conv_ae.encoder(element))
-
-        return self.lstm_ae.encoder(torch.stack(encodings))
-
-    def decoder(self, x, seq_len):
-        encodings = self.lstm_ae.decoder(x, seq_len)
-        decodings = []
-        for i in range(seq_len):
-            decodings.append(torch.squeeze(self.conv_ae.decoder(encodings[i])))
-
-        return torch.stack(decodings)
-
-    def forward(self, x):
-        seq_len = x.shape[0]
-        x = torchtranspose(x, 1, 2)
-        x = self.encoder(x)
-        x = self.decoder(x, seq_len)
-        x = torchtranspose(x, 1, 2)
-        return x
+import torch.optim as optim
+import pickle
+
+from torch.nn import TransformerEncoder
+from torch.nn import TransformerDecoder
+from dlutils import *
+
+## Separate LSTM for each variable
+class LSTM_Univariate(nn.Module):
+	def __init__(self, feats):
+		super(LSTM_Univariate, self).__init__()
+		self.name = 'LSTM_Univariate'
+		self.lr = 0.002
+		self.n_feats = feats
+		self.n_hidden = 1
+		self.lstm = nn.ModuleList([nn.LSTM(1, self.n_hidden) for i in range(feats)])
+
+	def forward(self, x):
+		hidden = [(torch.rand(1, 1, self.n_hidden, dtype=torch.float64), 
+			torch.randn(1, 1, self.n_hidden, dtype=torch.float64)) for i in range(self.n_feats)]
+		outputs = []
+		for i, g in enumerate(x):
+			multivariate_output = []
+			for j in range(self.n_feats):
+				univariate_input = g.view(-1)[j].view(1, 1, -1)
+				out, hidden[j] = self.lstm[j](univariate_input, hidden[j])
+				multivariate_output.append(2 * out.view(-1))
+			output = torch.cat(multivariate_output)
+			outputs.append(output)
+		return torch.stack(outputs)
+
+## Simple Multi-Head Self-Attention Model
+class Attention(nn.Module):
+	def __init__(self, feats):
+		super(Attention, self).__init__()
+		self.name = 'Attention'
+		self.lr = 0.0001
+		self.n_feats = feats
+		self.n_window = 5 # MHA w_size = 5
+		self.n = self.n_feats * self.n_window
+		self.atts = [ nn.Sequential( nn.Linear(self.n, feats * feats), 
+				nn.ReLU(True))	for i in range(1)]
+		self.atts = nn.ModuleList(self.atts)
+
+	def forward(self, g):
+		for at in self.atts:
+			ats = at(g.view(-1)).reshape(self.n_feats, self.n_feats)
+			g = torch.matmul(g, ats)		
+		return g, ats
+
+## LSTM_AD Model
+class LSTM_AD(nn.Module):
+	def __init__(self, feats):
+		super(LSTM_AD, self).__init__()
+		self.name = 'LSTM_AD'
+		self.lr = 0.002
+		self.n_feats = feats
+		self.n_hidden = 64
+		self.lstm = nn.LSTM(feats, self.n_hidden)
+		self.lstm2 = nn.LSTM(feats, self.n_feats)
+		self.fcn = nn.Sequential(nn.Linear(self.n_feats, self.n_feats), nn.Sigmoid())
+
+	def forward(self, x):
+		hidden = (torch.rand(1, 1, self.n_hidden, dtype=torch.float64), torch.randn(1, 1, self.n_hidden, dtype=torch.float64))
+		hidden2 = (torch.rand(1, 1, self.n_feats, dtype=torch.float64), torch.randn(1, 1, self.n_feats, dtype=torch.float64))
+		outputs = []
+		for i, g in enumerate(x):
+			out, hidden = self.lstm(g.view(1, 1, -1), hidden)
+			out, hidden2 = self.lstm2(g.view(1, 1, -1), hidden2)
+			out = self.fcn(out.view(-1))
+			outputs.append(2 * out.view(-1))
+		return torch.stack(outputs)
+
+
+
+# Proposed Model (VLDB 22)
+class TranAD_Basic(nn.Module):
+	def __init__(self, feats):
+		super(TranAD_Basic, self).__init__()
+		self.name = 'TranAD_Basic'
+		self.lr = 0.001
+		self.batch = 128
+		self.n_feats = feats
+		self.n_window = 100
+		self.n = self.n_feats * self.n_window
+		self.pos_encoder = PositionalEncoding(feats, 0.1, self.n_window)
+		encoder_layers = TransformerEncoderLayer(d_model=feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_encoder = TransformerEncoder(encoder_layers, 1)
+		decoder_layers = TransformerDecoderLayer(d_model=feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder = TransformerDecoder(decoder_layers, 1)
+		self.fcn = nn.Sigmoid()
+
+	def forward(self, src):
+		src = torch.transpose(src, 1, 2)
+		tgt = torch.clone(src)
+		src = src * math.sqrt(self.n_feats)
+		src = self.pos_encoder(src)
+		memory = self.transformer_encoder(src)
+		x = self.transformer_decoder(tgt, memory)
+		x = self.fcn(x)
+		x = torch.transpose(x, 1, 2)
+		return x
+
+# Proposed Model (FCN) + Self Conditioning + Adversarial + MAML (VLDB 22)
+class TranAD_Transformer(nn.Module):
+	def __init__(self, feats):
+		super(TranAD_Transformer, self).__init__()
+		self.name = 'TranAD_Transformer'
+		self.lr = lr
+		self.batch = 128
+		self.n_feats = feats
+		self.n_hidden = 8
+		self.n_window = 10
+		self.n = 2 * self.n_feats * self.n_window
+		self.transformer_encoder = nn.Sequential(
+			nn.Linear(self.n, self.n_hidden), nn.ReLU(True),
+			nn.Linear(self.n_hidden, self.n), nn.ReLU(True))
+		self.transformer_decoder1 = nn.Sequential(
+			nn.Linear(self.n, self.n_hidden), nn.ReLU(True),
+			nn.Linear(self.n_hidden, 2 * feats), nn.ReLU(True))
+		self.transformer_decoder2 = nn.Sequential(
+			nn.Linear(self.n, self.n_hidden), nn.ReLU(True),
+			nn.Linear(self.n_hidden, 2 * feats), nn.ReLU(True))
+		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+
+	def encode(self, src, c, tgt):
+		src = torch.cat((src, c), dim=2)
+		src = src.permute(1, 0, 2).flatten(start_dim=1)
+		tgt = self.transformer_encoder(src)
+		return tgt
+
+	def forward(self, src, tgt):
+		# Phase 1 - Without anomaly scores
+		c = torch.zeros_like(src)
+		x1 = self.transformer_decoder1(self.encode(src, c, tgt))
+		x1 = x1.reshape(-1, 1, 2*self.n_feats).permute(1, 0, 2)
+		x1 = self.fcn(x1)
+		# Phase 2 - With anomaly scores
+		c = (x1 - src) ** 2
+		x2 = self.transformer_decoder2(self.encode(src, c, tgt))
+		x2 = x2.reshape(-1, 1, 2*self.n_feats).permute(1, 0, 2)
+		x2 = self.fcn(x2)
+		return x1, x2
+
+# Proposed Model + Self Conditioning + MAML (VLDB 22)
+class TranAD_Adversarial(nn.Module):
+	def __init__(self, feats):
+		super(TranAD_Adversarial, self).__init__()
+		self.name = 'TranAD_Adversarial'
+		self.lr = lr
+		self.batch = 128
+		self.n_feats = feats
+		self.n_window = 10
+		self.n = self.n_feats * self.n_window
+		self.pos_encoder = PositionalEncoding(2 * feats, 0.1, self.n_window)
+		encoder_layers = TransformerEncoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_encoder = TransformerEncoder(encoder_layers, 1)
+		decoder_layers = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder = TransformerDecoder(decoder_layers, 1)
+		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+
+	def encode_decode(self, src, c, tgt):
+		src = torch.cat((src, c), dim=2)
+		src = src * math.sqrt(self.n_feats)
+		src = self.pos_encoder(src)
+		memory = self.transformer_encoder(src)
+		tgt = tgt.repeat(1, 1, 2)
+		x = self.transformer_decoder(tgt, memory)
+		x = self.fcn(x)
+		return x
+
+	def forward(self, src, tgt):
+		# Phase 1 - Without anomaly scores
+		c = torch.zeros_like(src)
+		x = self.encode_decode(src, c, tgt)
+		# Phase 2 - With anomaly scores
+		c = (x - src) ** 2
+		x = self.encode_decode(src, c, tgt)
+		return x
+
+# Proposed Model + Adversarial + MAML (VLDB 22)
+class TranAD_SelfConditioning(nn.Module):
+	def __init__(self, feats):
+		super(TranAD_SelfConditioning, self).__init__()
+		self.name = 'TranAD_SelfConditioning'
+		self.lr = lr
+		self.batch = 128
+		self.n_feats = feats
+		self.n_window = 10
+		self.n = self.n_feats * self.n_window
+		self.pos_encoder = PositionalEncoding(2 * feats, 0.1, self.n_window)
+		encoder_layers = TransformerEncoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_encoder = TransformerEncoder(encoder_layers, 1)
+		decoder_layers1 = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder1 = TransformerDecoder(decoder_layers1, 1)
+		decoder_layers2 = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder2 = TransformerDecoder(decoder_layers2, 1)
+		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+
+	def encode(self, src, c, tgt):
+		src = torch.cat((src, c), dim=2)
+		src = src * math.sqrt(self.n_feats)
+		src = self.pos_encoder(src)
+		memory = self.transformer_encoder(src)
+		tgt = tgt.repeat(1, 1, 2)
+		return tgt, memory
+
+	def forward(self, src, tgt):
+		# Phase 1 - Without anomaly scores
+		c = torch.zeros_like(src)
+		x1 = self.fcn(self.transformer_decoder1(*self.encode(src, c, tgt)))
+		# Phase 2 - With anomaly scores
+		x2 = self.fcn(self.transformer_decoder2(*self.encode(src, c, tgt)))
+		return x1, x2
+
+# Proposed Model + Self Conditioning + Adversarial + MAML (VLDB 22)
+class TranAD(nn.Module):
+	def __init__(self, feats):
+		super(TranAD, self).__init__()
+		self.name = 'TranAD'
+		self.lr = 0.001
+		self.batch = 128
+		self.n_feats = feats
+		self.n_window = 100
+		self.n = self.n_feats * self.n_window
+		self.pos_encoder = PositionalEncoding(2 * feats, 0.1, self.n_window)
+		encoder_layers = TransformerEncoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_encoder = TransformerEncoder(encoder_layers, 1)
+		decoder_layers1 = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder1 = TransformerDecoder(decoder_layers1, 1)
+		decoder_layers2 = TransformerDecoderLayer(d_model=2 * feats, nhead=feats, dim_feedforward=16, dropout=0.1)
+		self.transformer_decoder2 = TransformerDecoder(decoder_layers2, 1)
+		self.fcn = nn.Sequential(nn.Linear(2 * feats, feats), nn.Sigmoid())
+
+	def encode(self, src, c, tgt):
+		src = torch.cat((src, c), dim=2)
+		src = src * math.sqrt(self.n_feats)
+		src = self.pos_encoder(src)
+		memory = self.transformer_encoder(src)
+		tgt = tgt.repeat(1, 1, 2)
+		return tgt, memory
+
+	def forward(self, src):
+
+		tgt = torch.clone(src)
+		# Phase 1 - Without anomaly scores
+		c = torch.zeros_like(src)
+		x1 = self.fcn(self.transformer_decoder1(*self.encode(src, c, tgt)))
+		# Phase 2 - With anomaly scores
+		c = (x1 - src) ** 2
+		x2 = self.fcn(self.transformer_decoder2(*self.encode(src, c, tgt)))
+		
+		return x2
