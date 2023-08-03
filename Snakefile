@@ -30,16 +30,17 @@ wildcard_constraints:
 
 rule find_valid_segments:
     input:
-        hanford_path = 'data/O3a_Hanford_segments.json',
-        livingston_path = 'data/O3a_Livingston_segments.json'
+        hanford_path = 'data/{period}_Hanford_segments.json',
+        livingston_path = 'data/{period}_Livingston_segments.json'
     params:
-        save_path = 'output/O3a_intersections.npy'
+        save_path = 'output/{period}_intersections.npy'
     script:
         'scripts/segments_intersection.py'
 
 rule run_omicron:
     input:
-        intersections = rules.find_valid_segments.params.save_path
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period='O3a')
     params:
         user_name = 'katya.govorkova',
         folder = 'output/omicron/'
@@ -51,7 +52,8 @@ rule run_omicron:
 rule fetch_site_data:
     input:
         omicron = rules.run_omicron.params.folder,
-        intersections = rules.find_valid_segments.params.save_path
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period='O3a')
     output:
         'tmp/dummy_{site}.txt'
     shell:
@@ -62,7 +64,8 @@ rule fetch_site_data:
 rule generate_data:
     input:
         omicron = 'output/omicron/',
-        intersections = rules.find_valid_segments.params.save_path,
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period='O3a')
     params:
         dependencies = expand(rules.fetch_site_data.output,
                               site=['L1', 'H1'])
