@@ -14,7 +14,7 @@ def intersect(seg1, seg2):
     return None
 
 
-def main(hanford_path, livingston_path, save_path):
+def main(hanford_path, livingston_path, save_path, period):
     '''
     Function which takes the valid segments from both detectors
     and finds an "intersection", i.e. segments where both detectors
@@ -35,6 +35,11 @@ def main(hanford_path, livingston_path, save_path):
             if intersection is not None:
                 valid_segments.append(intersection)
 
-    np.save(save_path, np.array(valid_segments))
+    if period == 'O3a':
+        np.save(save_path, np.array(valid_segments))
+    elif period == 'O3b':
+        np.save(save_path, np.array(valid_segments[0]))
 
-main(snakemake.input[0], snakemake.input[1], snakemake.params[0])
+
+
+main(snakemake.input[0], snakemake.input[1], snakemake.params[0], snakemake.wildcards['period'])
