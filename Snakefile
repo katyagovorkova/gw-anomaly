@@ -69,7 +69,7 @@ rule generate_data:
     params:
         dependencies = expand(rules.fetch_site_data.output,
                               site=['L1', 'H1'],
-                              version=VERSION)
+                              version=VERSION),
         file = '/home/katya.govorkova/gw-anomaly/output/data/{dataclass}.npz'
     shell:
         'python3 scripts/generate.py {input.omicron} {params.file} \
