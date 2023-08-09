@@ -55,7 +55,7 @@ def calculate_means(metric_vals, snrs, bar):
     means, stds = [], []
     snr_plot = []
 
-    for i in range(VARYING_SNR_LOW, VARYING_SNR_HIGH, bar):
+    for i in np.arange(VARYING_SNR_LOW, VARYING_SNR_HIGH, bar):
 
         points = []
         for shift in range(bar):
@@ -509,7 +509,7 @@ def make_roc_curves(datas,
         metric_val_label = far_to_metric(
             365*24*3600, far_hist) #
 
-        snrs = [int(elem) for elem in snrs] #not necessary after update
+        # snrs = [int(elem) for elem in snrs] #not necessary after update
 
         #positive detection are the ones below the curve
         if not hrss:
@@ -635,27 +635,26 @@ def main(args):
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
-            hrss_dist[tag] = hrss
+            hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
-        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-                            [snrs_dict[elem] for elem in X3],
-                            model,
-                            far_hist,
-                            X3,
-                            args.plot_savedir,
-                            'Detection Efficiency',
-                            'Detection Efficiency, SNR',
-                            bias)
-        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-                            [hrss_dict[elem] for elem in X3],
-                            model,
-                            far_hist,
-                            X3,
-                            args.plot_savedir,
-                            'Detection Efficiency, hrss',
-                            bias,
-                            hrss=True)
+        # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+        #                     [snrs_dict[elem] for elem in X3],
+        #                     model,
+        #                     far_hist,
+        #                     X3,
+        #                     args.plot_savedir,
+        #                     'Detection Efficiency, SNR',
+        #                     bias)
+        # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+        #                     [hrss_dict[elem] for elem in X3],
+        #                     model,
+        #                     far_hist,
+        #                     X3,
+        #                     args.plot_savedir,
+        #                     'Detection Efficiency, hrss',
+        #                     bias,
+        #                     hrss=True)
 
         if do_make_roc_curves: #roc curve
             make_roc_curves([data_dict[elem] for elem in X3],
