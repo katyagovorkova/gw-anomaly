@@ -117,10 +117,10 @@ rule generate_timeslides_for_far:
             dataclass=modelclasses,
             version='{version}'),
         shorten_timeslides = False,
-        save_path = directory('/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/'),
+        save_path = '/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/',
     # output:
-        save_evals_path = directory('/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/evals/'),
-        save_normalizations_path = directory('/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/normalization/')
+        save_evals_path = '/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/evals/',
+        save_normalizations_path = '/home/katya.govorkova/gw-anomaly/output/{version}/timeslides_{id}/normalization/'
     shell:
         'mkdir -p {params.save_path}; '
         'mkdir -p {params.save_evals_path}; '
@@ -154,10 +154,10 @@ rule generate_timeslides_for_fm:
             dataclass='timeslides',
             version=VERSION),
         shorten_timeslides = True,
-        save_path = directory(f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/'),
+        save_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/',
     # output:
-        save_evals_path = directory(f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/evals/'),
-        save_normalizations_path = directory(f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/normalization/')
+        save_evals_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/evals/',
+        save_normalizations_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/normalization/',
     shell:
         'mkdir -p {params.save_path}; '
         'mkdir -p {params.save_evals_path}; '
@@ -173,7 +173,6 @@ rule train_final_metric:
         signals = expand(rules.evaluate_signals.params.save_file,
             signal_dataclass=fm_training_classes,
             version=VERSION),
-        dependencies = rules.generate_timeslides_for_fm.params,
         timeslides = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/evals/',
         normfactors = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/normalization/',
     # output:
@@ -256,7 +255,7 @@ rule quak_plotting_prediction_and_recreation:
 rule plot_results:
     input:
         dependencies = [rules.merge_far_hist.params.save_path,
-            expand(rules.evaluate_signals.params,
+            expand(rules.evaluate_signals.params.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
         fm_model_path = rules.train_final_metric.params.fm_model_path
