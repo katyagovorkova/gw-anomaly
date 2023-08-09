@@ -177,6 +177,7 @@ rule train_final_metric:
         timeslides = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/evals/',
         normfactors = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/timeslides/normalization/',
     # output:
+    params:
         params_file = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/trained/final_metric_params.npy',
         norm_factor_file = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/trained/norm_factor_params.npy',
         fm_model_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/trained/fm_model.pt'
