@@ -45,7 +45,8 @@ from config import (
     RETURN_INDIV_LOSSES,
     CURRICULUM_SNRS,
     FACTORS_NOT_USED_FOR_FM,
-    HRSS_VS_FAR_BAR)
+    HRSS_VS_FAR_BAR,
+    SMOOTHING_KERNEL_SIZES)
 
 DEVICE = torch.device(GPU_NAME)
 
@@ -84,6 +85,7 @@ def amp_measure_vs_far_plotting(
         savedir,
         special,
         bias,
+        smoothing_window=1,
         hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
@@ -112,7 +114,10 @@ def amp_measure_vs_far_plotting(
                 data).float().to(DEVICE)).detach().cpu().numpy()
         else:
             fm_vals = np.dot(data, metric_coefs)
-
+        if smoothing_window != 1:
+            print("May be an error with shapes here")
+            fm_vals = np.convolve(fm_vals, np.ones(smoothing_window)/smoothing_window, mode='valid')
+            
         fm_vals = np.min(fm_vals, axis=1)
         if not hrss:
             amp_measure_plot, means_plot, stds_plot = calculate_means(
@@ -467,6 +472,7 @@ def make_roc_curves(datas,
         savedir,
         special,
         bias,
+        smoothing_window=1,
         hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
@@ -478,8 +484,11 @@ def make_roc_curves(datas,
         'wnblf': 'deeppink',
         'supernova': 'goldenrod'
     }
+    if not hrss:
+        axs.set_xlabel(f'SNR', fontsize=20)
+    else:
+        axs.set_xlabel(f'hrss', fontsize=20)
 
-    axs.set_xlabel(f'SNR', fontsize=20)
     axs.set_ylabel('Fraction of events detected at FAR 1/year', fontsize=20)
 
     for k in range(len(datas)):
@@ -492,6 +501,9 @@ def make_roc_curves(datas,
                 data).float().to(DEVICE)).detach().cpu().numpy()
         else:
             fm_vals = np.dot(data, metric_coefs)
+
+        if smoothing_window != 1:
+            fm_vals = np.convolve(fm_vals, np.ones(smoothing_window)/smoothing_window, mode='valid')
 
         fm_vals = np.min(fm_vals, axis=1)
 
@@ -515,16 +527,22 @@ def make_roc_curves(datas,
         if not hrss:
             am_bins = np.arange(0, VARYING_SNR_HIGH, 1)
         else:
-            am_bins = np.arange(0, 1e-21, 1e-23) # not yet clear what this will look like
+            axs.set_xscale("log")
+            am_bins = np.logspace(-23, -18, 200) # not yet clear what this will look like
+        #print(hrss, am_bins)
         nbins = len(am_bins)
         am_bin_detected = [0]*nbins
         am_bin_total = [0]*nbins
         for i, am in enumerate(amp_measure):
-            if am < 50: #generating new signals with different prior not finished yet
-                am_bin_total[am] += 1
-                detec_stat = fm_vals[i]
-                if detec_stat <= metric_val_label:
-                    am_bin_detected[am] += 1
+            insert_location = np.searchsorted(am_bins, am)
+            #print(am) 
+            if insert_location >= 200:
+                continue
+            #print(insert_location)
+            am_bin_total[insert_location] += 1
+            detec_stat = fm_vals[i]
+            if detec_stat <= metric_val_label:
+                am_bin_detected[insert_location] += 1
 
         TPRs = []
         snr_bins_plot = []
@@ -537,6 +555,7 @@ def make_roc_curves(datas,
 
 
     # plt.yscale('log')
+    
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
@@ -605,7 +624,7 @@ def main(args):
     do_make_roc_curves = 1
 
     if do_snr_vs_far or do_make_roc_curves:
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins.npy')
+        
         metric_coefs = np.load(f'{args.data_predicted_path}/trained/final_metric_params.npy')
         means, stds = np.load(f'{args.data_predicted_path}/trained/norm_factor_params.npy')
         tags = ['bbh', 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
@@ -630,51 +649,57 @@ def main(args):
 
             data = (data - means) / stds
             data = data#[1000:]
-            snrs = np.load(f'output/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-            hrss = np.load(f'output/data/{tag}_varying_snr_hrss.npz.npy')
+            snrs = np.load(f'/home/katya.govorkova/gw-anomaly/output/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            hrss = np.load(f'/home/katya.govorkova/gw-anomaly/output/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
             hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
-        # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-        #                     [snrs_dict[elem] for elem in X3],
-        #                     model,
-        #                     far_hist,
-        #                     X3,
-        #                     args.plot_savedir,
-        #                     'Detection Efficiency, SNR',
-        #                     bias)
-        # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-        #                     [hrss_dict[elem] for elem in X3],
-        #                     model,
-        #                     far_hist,
-        #                     X3,
-        #                     args.plot_savedir,
-        #                     'Detection Efficiency, hrss',
-        #                     bias,
-        #                     hrss=True)
-
-        if do_make_roc_curves: #roc curve
-            make_roc_curves([data_dict[elem] for elem in X3],
+        for smoothing_window in SMOOTHING_KERNEL_SIZES:
+            far_hist = np.load(f'{args.data_predicted_path}/far_bins_{smoothing_window}.npy')
+            amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                                 [snrs_dict[elem] for elem in X3],
                                 model,
                                 far_hist,
                                 X3,
                                 args.plot_savedir,
-                                'ROC plots',
-                                'ROC plots, SNR',
-                                bias)
-            make_roc_curves([data_dict[elem] for elem in X3],
-                                [hrss_dict[elem] for elem in X3],
-                                model,
-                                far_hist,
-                                X3,
-                                args.plot_savedir,
-                                'ROC plots, hrss',
+                                f'Detection Efficiency, SNR, window: {smoothing_window}',
                                 bias,
-                                hrss=True)
+                                smoothing_window=smoothing_window)
+            # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+            #                     [hrss_dict[elem] for elem in X3],
+            #                     model,
+            #                     far_hist,
+            #                     X3,
+            #                     args.plot_savedir,
+            #                     'Detection Efficiency, hrss',
+            #                     bias,
+            #                     hrss=True)
+
+        if do_make_roc_curves: #roc curve
+            for smoothing_window in SMOOTHING_KERNEL_SIZES:
+                far_hist = np.load(f'{args.data_predicted_path}/far_bins_{smoothing_window}.npy')
+                make_roc_curves([data_dict[elem] for elem in X3],
+                                    [snrs_dict[elem] for elem in X3],
+                                    model,
+                                    far_hist,
+                                    X3,
+                                    args.plot_savedir,
+                                    f'ROC plots, SNR, window: {smoothing_window}',
+                                    bias,
+                                    smoothing_window=smoothing_window)
+                make_roc_curves([data_dict[elem] for elem in X3],
+                                    [hrss_dict[elem] for elem in X3],
+                                    model,
+                                    far_hist,
+                                    X3,
+                                    args.plot_savedir,
+                                    f'ROC plots, hrss, window: {smoothing_window}',
+                                    bias,
+                                    smoothing_window=smoothing_window,
+                                    hrss=True)
 
     if do_fake_roc:
         far_hist = np.load(f'{args.data_predicted_path}/far_bins.npy')

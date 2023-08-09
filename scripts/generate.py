@@ -3,6 +3,7 @@ import numpy as np
 import bilby
 import argparse
 import scipy
+import matplotlib.pyplot as plt
 from helper_functions import (
     load_folder,
     whiten_bandpass_bkgs,
@@ -206,7 +207,8 @@ def inject_signal(
         # length of background segment to fetch for each injection
         segment_length=TRAIN_INJECTION_SEGMENT_LENGTH,
         inject_at_end=False,
-        return_injection_snr=False):
+        return_injection_snr=False,
+        return_scales=False):
 
     loaded_data = load_folder(folder_path,
                               DATA_SEGMENT_LOAD_START,
@@ -232,6 +234,7 @@ def inject_signal(
     print(f'background segments shape {bkg_segs.shape}')
     final_data = []
     sampled_SNR = []
+    response_scales = []
     for i, pols in enumerate(polarizations):
         # didn't generate enough bkg samples, this is generally fine unless
         # small overall samples
@@ -242,19 +245,23 @@ def inject_signal(
             sample_snr = SNR()
             sampled_SNR.append(sample_snr)
         for j in range(1):
-            injected_waveform, _ = inject_hplus_hcross(bkg_segs[:, i, :],
+            injected_waveform, scales = inject_hplus_hcross(bkg_segs[:, i, :],
                                                        pols,
                                                        SAMPLE_RATE,
                                                        segment_length,
                                                        SNR=sample_snr,
                                                        background=loaded_data,
                                                        detector_psds=detector_psds,
-                                                       inject_at_end=inject_at_end)
+                                                       inject_at_end=inject_at_end,
+                                                       return_scale=return_scales)
+            response_scales.append(scales)
             bandpass_segs = whiten_bandpass_bkgs(injected_waveform, SAMPLE_RATE, loaded_data[
                                                  'H1']['asd'], loaded_data['L1']['asd'])
             final_data.append(bandpass_segs)
 
     if return_injection_snr:
+        if return_scales:
+            return np.hstack(final_data), np.array(sampled_SNR), np.array(response_scales)
         return np.hstack(final_data), np.array(sampled_SNR)
     return np.hstack(final_data)
 
@@ -660,18 +667,23 @@ def main(args):
             N_VARYING_SNR_INJECTIONS)
 
         sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
-
+        print(sampled_hrss)
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
         # 2: create the injections with those signal classes
-        BBH_injections, sampled_snr = inject_signal(folder_path=args.folder_path,
+        BBH_injections, sampled_snr, scales = inject_signal(folder_path=args.folder_path,
                                                     data=[bbh_cross, bbh_plus],
                                                     segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
                                                     inject_at_end=True,
                                                     SNR=sampler,
-                                                    return_injection_snr=True)
+                                                    return_injection_snr=True,
+                                                    return_scales=True)
+        sampled_hrss *= scales
         training_data = BBH_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
+
+        plt.scatter(sampled_hrss, sampled_snr)
+        plt.savefig("/home/ryan.raikman/s23/temp/hrss_vs_snr.png", dpi=300)
 
     elif args.stype == 'sglf_varying_snr' or args.stype == 'sghf_varying_snr' or args.stype == 'sglf_fm_optimization' or args.stype == 'sghf_fm_optimization':
         # 1: generate the polarization files for the signal classes of interest
