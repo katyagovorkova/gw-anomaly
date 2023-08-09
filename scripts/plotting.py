@@ -44,7 +44,8 @@ from config import (
     GPU_NAME,
     RETURN_INDIV_LOSSES,
     CURRICULUM_SNRS,
-    FACTORS_NOT_USED_FOR_FM)
+    FACTORS_NOT_USED_FOR_FM,
+    HRSS_VS_FAR_BAR)
 
 DEVICE = torch.device(GPU_NAME)
 
@@ -74,31 +75,36 @@ def calculate_means(metric_vals, snrs, bar):
     return snr_plot, means, stds
 
 
-def snr_vs_far_plotting(
+def amp_measure_vs_far_plotting(
         datas,
-        snrss,
+        amp_measures, #rename from snr to encompass both snr and hrss
         metric_coefs,
         far_hist,
         tags,
         savedir,
         special,
-        bias):
+        bias,
+        hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
-        'bbh': 'steelblue',
-        'sglf': 'salmon',
-        'sghf': 'goldenrod',
-        'wnbhf': 'purple',
-        'wnblf': 'hotpink',
-        'supernova': 'darkorange'
+        'bbh': 'blue',
+        'sg': 'red',
+        'sglf': 'red',
+        'sghf': 'orange',
+        'wnbhf': 'darkviolet',
+        'wnblf': 'deeppink',
+        'supernova': 'goldenrod'
     }
+    if not hrss:
+        axs.set_xlabel(f'SNR', fontsize=20)
+    else:
+        axs.set_xlabel(f'hrss', fontsize=20)
 
-    axs.set_xlabel(f'SNR', fontsize=20)
     axs.set_ylabel('Final metric value, a.u.', fontsize=20)
 
     for k in range(len(datas)):
         data = datas[k]
-        snrs = snrss[k]
+        amp_measure = amp_measures[k]
         tag = tags[k]
 
         if RETURN_INDIV_LOSSES:
@@ -108,9 +114,13 @@ def snr_vs_far_plotting(
             fm_vals = np.dot(data, metric_coefs)
 
         fm_vals = np.min(fm_vals, axis=1)
+        if not hrss:
+            amp_measure_plot, means_plot, stds_plot = calculate_means(
+                fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
+        else:
+            amp_measure_plot, means_plot, stds_plot = calculate_means(
+                fm_vals, amp_measure, bar=HRSS_VS_FAR_BAR)
 
-        snr_plot, means_plot, stds_plot = calculate_means(
-            fm_vals, snrs, bar=SNR_VS_FAR_BAR)
         means_plot, stds_plot = np.array(means_plot), np.array(stds_plot)
         rename_map = {
             'background': 'Background',
@@ -124,8 +134,8 @@ def snr_vs_far_plotting(
         }
         tag_ = rename_map[tag]
 
-        axs.plot(snr_plot,  means_plot - bias, color=colors[tag], label=f'{tag_}', linewidth=2)
-        axs.fill_between(snr_plot,
+        axs.plot(amp_measure_plot,  means_plot - bias, color=colors[tag], label=f'{tag_}', linewidth=2)
+        axs.fill_between(amp_measure_plot,
                          (means_plot - bias) - stds_plot / 2,
                          (means_plot - bias) + stds_plot / 2,
                          alpha=0.15,
@@ -138,12 +148,17 @@ def snr_vs_far_plotting(
             axs.axhline(y=metric_val_label - bias, alpha=0.8**i, label=f'1/{label}', c='black')
 
     labelLines(axs.get_lines(), zorder=2.5, xvals=(
-        15, 20, 15, 30, 35, 40, 25, 30, 35, 40, 45))
+        15, 20, 25, 35, 40, 45, 25, 30, 35, 40, 45))
     axs.set_title(special, fontsize=20)
-    axs.set_xlim(VARYING_SNR_LOW + SNR_VS_FAR_BAR / 2,
-                 VARYING_SNR_HIGH - SNR_VS_FAR_BAR / 2)
+    # axs.set_xlim(VARYING_SNR_LOW + SNR_VS_FAR_BAR / 2,
+    #              VARYING_SNR_HIGH - SNR_VS_FAR_BAR / 2)
+    if not hrss:
+        axs.set_xlim(12.5,50)
+    else:
+        None #figure this out
     axs.set_ylim(-40,-5)
 
+    # plt.yscale('log')
     plt.grid(True)
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
@@ -445,21 +460,23 @@ def learned_fm_weights_colorplot(values, savedir):
     plt.savefig(savedir, bbox_inches='tight',dpi=300)
 
 def make_roc_curves(datas,
-        snrss,
+        amp_measures,
         metric_coefs,
         far_hist,
         tags,
         savedir,
         special,
-        bias):
+        bias,
+        hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
-        'bbh': 'steelblue',
-        'sglf': 'salmon',
-        'sghf': 'goldenrod',
-        'wnbhf': 'purple',
-        'wnblf': 'hotpink',
-        'supernova': 'darkorange'
+        'bbh': 'blue',
+        'sg': 'red',
+        'sglf': 'red',
+        'sghf': 'orange',
+        'wnbhf': 'darkviolet',
+        'wnblf': 'deeppink',
+        'supernova': 'goldenrod'
     }
 
     axs.set_xlabel(f'SNR', fontsize=20)
@@ -467,7 +484,7 @@ def make_roc_curves(datas,
 
     for k in range(len(datas)):
         data = datas[k]
-        snrs = snrss[k]
+        amp_measure = amp_measures[k]
         tag = tags[k]
 
         if RETURN_INDIV_LOSSES:
@@ -495,35 +512,34 @@ def make_roc_curves(datas,
         snrs = [int(elem) for elem in snrs] #not necessary after update
 
         #positive detection are the ones below the curve
-        snr_bins = np.arange(0, VARYING_SNR_HIGH, 1)
-        nbins = len(snr_bins)
-        snr_bin_detected = [0]*nbins
-        snr_bin_total = [0]*nbins
-        for i, snr in enumerate(snrs):
-            snr_bin_total[snr] += 1
-            detec_stat = fm_vals[i]
-            if detec_stat <= metric_val_label:
-                snr_bin_detected[snr] += 1
+        if not hrss:
+            am_bins = np.arange(0, VARYING_SNR_HIGH, 1)
+        else:
+            am_bins = np.arange(0, 1e-21, 1e-23) # not yet clear what this will look like
+        nbins = len(am_bins)
+        am_bin_detected = [0]*nbins
+        am_bin_total = [0]*nbins
+        for i, am in enumerate(amp_measure):
+            if am < 50: #generating new signals with different prior not finished yet
+                am_bin_total[am] += 1
+                detec_stat = fm_vals[i]
+                if detec_stat <= metric_val_label:
+                    am_bin_detected[am] += 1
 
         TPRs = []
         snr_bins_plot = []
         for i in range(nbins):
-            if snr_bin_total[i] != 0:
-                TPRs.append(snr_bin_detected[i]/snr_bin_total[i])
-                snr_bins_plot.append(snr_bins[i]) #only adding it if nonzero total in that bin
+            if am_bin_total[i] != 0:
+                TPRs.append(am_bin_detected[i]/am_bin_total[i])
+                snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
 
-        TPRs_shorten = []
-        snr_bins_plot_shorten = []
-        for i in range(0,len(snr_bins_plot)-1,2):
-            TPRs_shorten.append((TPRs[i]+TPRs[i+1])/2)
-            snr_bins_plot_shorten.append((snr_bins_plot[i]+snr_bins_plot[i+1])/2)
+        axs.plot(snr_bins_plot, TPRs, label = tag)
 
-        axs.plot(snr_bins_plot_shorten, TPRs_shorten,
-            label=tag_, color=colors[tag], linewidth=2)
+
+    # plt.yscale('log')
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
-    axs.set_xlim()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
     plt.show()
     plt.close()
@@ -579,14 +595,14 @@ def main(args):
     arr[-1] = weight[-1]
     weights.append(arr)
 
-    do_snr_vs_far = 0
-    do_fake_roc = 0
-    do_3_panel_plot = 0
-    do_combined_loss_curves = 0
-    do_train_signal_example_plots = 0
-    do_anomaly_signal_show = 0
+    do_snr_vs_far = 1
+    do_fake_roc = 1
+    do_3_panel_plot = 1
+    do_combined_loss_curves = 1
+    do_train_signal_example_plots = 1
+    do_anomaly_signal_show = 1
     do_learned_fm_weights = 1
-    do_make_roc_curves = 0
+    do_make_roc_curves = 1
 
     if do_snr_vs_far or do_make_roc_curves:
         far_hist = np.load(f'{args.data_predicted_path}/far_bins.npy')
@@ -602,6 +618,7 @@ def main(args):
 
         data_dict = {}
         snrs_dict = {}
+        hrss_dict = {}
         for tag in tags:
 
             print(f'loading {tag}')
@@ -614,19 +631,31 @@ def main(args):
             data = (data - means) / stds
             data = data#[1000:]
             snrs = np.load(f'output/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            hrss = np.load(f'output/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
+            hrss_dist[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
-        snr_vs_far_plotting([data_dict[elem] for elem in X3],
+        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                             [snrs_dict[elem] for elem in X3],
                             model,
                             far_hist,
                             X3,
                             args.plot_savedir,
                             'Detection Efficiency',
+                            'Detection Efficiency, SNR',
                             bias)
+        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+                            [hrss_dict[elem] for elem in X3],
+                            model,
+                            far_hist,
+                            X3,
+                            args.plot_savedir,
+                            'Detection Efficiency, hrss',
+                            bias,
+                            hrss=True)
 
         if do_make_roc_curves: #roc curve
             make_roc_curves([data_dict[elem] for elem in X3],
@@ -636,7 +665,17 @@ def main(args):
                                 X3,
                                 args.plot_savedir,
                                 'ROC plots',
+                                'ROC plots, SNR',
                                 bias)
+            make_roc_curves([data_dict[elem] for elem in X3],
+                                [hrss_dict[elem] for elem in X3],
+                                model,
+                                far_hist,
+                                X3,
+                                args.plot_savedir,
+                                'ROC plots, hrss',
+                                bias,
+                                hrss=True)
 
     if do_fake_roc:
         far_hist = np.load(f'{args.data_predicted_path}/far_bins.npy')

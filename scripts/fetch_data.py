@@ -13,16 +13,20 @@ from config import CHANNEL
 def main(args):
 
     segments = np.load(args.intersections)
+    # dirty trick for O3b
+    if len(segments)==2: segments = [segments]
+
     for segment in segments:
 
         if os.path.exists(f'{args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5'):
             print(f'Already exists: {args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5')
             continue
         else:
-            if os.path.exists(f'{args.folder_path}/{segment[0]}_{segment[1]}/'):
-                data = TimeSeries.get(f'{args.site}:{CHANNEL}', segment[0], segment[1])
-                data.write(f'{args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5')
-                print(f'Fetching completed for {segment[0]} {segment[1]}')
+            if not os.path.exists(f'{args.folder_path}/{segment[0]}_{segment[1]}/'):
+                os.mkdir(f'{args.folder_path}/{segment[0]}_{segment[1]}/')
+            data = TimeSeries.get(f'{args.site}:{CHANNEL}', segment[0], segment[1])
+            data.write(f'{args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5')
+            print(f'Fetching completed for {segment[0]} {segment[1]}')
 
 
 if __name__ == '__main__':
