@@ -100,7 +100,7 @@ rule train_quak:
     params:
         data = expand(rules.upload_data.params,
                       dataclass='{dataclass}',
-                      version=VERSION)
+                      version=VERSION),
     # output:
         savedir = directory('/home/katya.govorkova/gw-anomaly/output/{version}/trained/{dataclass}'),
         model_file = '/home/katya.govorkova/gw-anomaly/output/{version}/trained/models/{dataclass}.pt'
@@ -139,7 +139,7 @@ rule evaluate_signals:
                              version='{version}'),
         model_path = expand(rules.train_quak.params.model_file,
                             dataclass=modelclasses,
-                            version='{version}')
+                            version='{version}'),
     # output:
         save_file = '/home/katya.govorkova/gw-anomaly/output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
