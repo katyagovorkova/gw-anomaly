@@ -76,6 +76,14 @@ def generate_timeslides(
     return data_cleaned
 
 
+def calculate_hrss(hcross, hplus):
+    '''
+    hcross: np array of N_samples, N_datapoints
+    hplus: np array of N_samples, N_datapoints
+    '''
+    return (np.sum(hcross**2 + hplus**2, axis=1) / SAMPLE_RATE)**0.5 # dt = 1/fs
+
+
 def bbh_polarization_generator(
         n_injections,
         segment_length=2):
@@ -540,6 +548,7 @@ def repeat_arr(arr, n):
 
 def main(args):
     sampled_snr = None
+    sampled_hrss = None
 
     if args.stype == 'bbh':
         # 1: generate the polarization files for the signal classes of interest
@@ -602,35 +611,42 @@ def main(args):
         return training_data
 
     elif args.stype == 'glitches':
-        segments = np.load(args.intersections)
-        datums = []
 
-        for segment in segments:
-            start, stop = segment[0], segment[1]
-            seglen = stop - start
-            if seglen < 3600:
-                continue
+        # we are using O3a glitches for O3b
+        if args.period == 'O3b':
+            training_data = np.load('/home/katya.govorkova/gwak/v2/data/glitches.npz')['data']
+            training_data = dict(data=training_data)
 
-            full_path = f'./output/omicron/{start}_{stop}/'
+        else:
+            segments = np.load(args.intersections)
+            datums = []
 
-            for j in range(seglen // 3600):
-                split_start, split_stop = j * 3600, (j + 1) * 3600
-                j_args = argparse.Namespace(
-                    folder_path=full_path,
-                    save_file=f'{full_path}/glitch.npy',
-                    stype='glitch',
-                    start=split_start,
-                    stop=split_stop)
-
-                datum = main(j_args)
-                if datum == 'empty':
+            for segment in segments:
+                start, stop = segment[0], segment[1]
+                seglen = stop - start
+                if seglen < 3600:
                     continue
 
-                datums.append(datum)
+                full_path = f'./output/omicron/{start}_{stop}/'
 
-        training_data = np.concatenate(datums, axis=0)
-        print(f'Total glitch shape is {training_data.shape}')
-        training_data = dict(data=training_data)
+                for j in range(seglen // 3600):
+                    split_start, split_stop = j * 3600, (j + 1) * 3600
+                    j_args = argparse.Namespace(
+                        folder_path=full_path,
+                        save_file=f'{full_path}/glitch.npy',
+                        stype='glitch',
+                        start=split_start,
+                        stop=split_stop)
+
+                    datum = main(j_args)
+                    if datum == 'empty':
+                        continue
+
+                    datums.append(datum)
+
+            training_data = np.concatenate(datums, axis=0)
+            print(f'Total glitch shape is {training_data.shape}')
+            training_data = dict(data=training_data)
 
     elif args.stype == 'timeslides':
         event_times_path = 'data/LIGO_EVENT_TIMES.npy'
@@ -642,6 +658,8 @@ def main(args):
         # 1: generate the polarization files for the signal classes of interest
         bbh_cross, bbh_plus = bbh_polarization_generator(
             N_VARYING_SNR_INJECTIONS)
+
+        sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
@@ -659,6 +677,8 @@ def main(args):
         # 1: generate the polarization files for the signal classes of interest
         sg_cross, sg_plus = sg_polarization_generator(N_VARYING_SNR_INJECTIONS,
                                                       prior_file=f'data/{args.stype[:4]}.prior')
+
+        sampled_hrss = calculate_hrss(sg_cross, sg_plus)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
@@ -687,6 +707,7 @@ def main(args):
             fmin=fmin,
             fmax=fmax)
 
+        sampled_hrss = calculate_hrss(wnb_cross, wnb_plus)
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
 
@@ -703,6 +724,7 @@ def main(args):
         # 1 : Fetch the polarization files
         sn_cross, sn_plus = fetch_sn_polarization(args.sn_polarization_path)
 
+        sampled_hrss = calculate_hrss(sn_cross, sn_plus)
         # copy the array to get more samples, approximately equal to N_VARYING_SNR_INJECTIONS
         #'uniform' prior over the cross and plus, so just copy each one some number of times
         n_repeat = int(N_VARYING_SNR_INJECTIONS / len(sn_cross))
@@ -757,6 +779,11 @@ def main(args):
         snr_save_path = f'{args.save_file[:-4]}_SNR{args.save_file[-4:]}'
         np.save(snr_save_path, sampled_snr)
 
+    if sampled_hrss is not None:
+        # drop it in between name and .npy
+        hrss_save_path = f'{args.save_file[:-4]}_hrss{args.save_file[-4:]}'
+        np.save(hrss_save_path, sampled_hrss)
+
 
 if __name__ == '__main__':
 
@@ -786,5 +813,7 @@ if __name__ == '__main__':
     parser.add_argument('--intersections', type=str, default=None)
     parser.add_argument('--sn-polarization-path', type=str,
                         default='data/z85_sfho/')
+    parser.add_argument('--period', type=str, default='O3a')
+
     args = parser.parse_args()
     main(args)
