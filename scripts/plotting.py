@@ -89,13 +89,12 @@ def amp_measure_vs_far_plotting(
         hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
-        'bbh': 'blue',
-        'sg': 'red',
-        'sglf': 'red',
-        'sghf': 'orange',
-        'wnbhf': 'darkviolet',
-        'wnblf': 'deeppink',
-        'supernova': 'goldenrod'
+        'bbh': 'steelblue',
+        'sglf': 'salmon',
+        'sghf': 'goldenrod',
+        'wnbhf': 'purple',
+        'wnblf': 'hotpink',
+        'supernova': 'darkorange'
     }
     if not hrss:
         axs.set_xlabel(f'SNR', fontsize=20)
@@ -117,7 +116,7 @@ def amp_measure_vs_far_plotting(
         if smoothing_window != 1:
             print("May be an error with shapes here")
             fm_vals = np.convolve(fm_vals, np.ones(smoothing_window)/smoothing_window, mode='valid')
-            
+
         fm_vals = np.min(fm_vals, axis=1)
         if not hrss:
             amp_measure_plot, means_plot, stds_plot = calculate_means(
@@ -153,17 +152,15 @@ def amp_measure_vs_far_plotting(
             axs.axhline(y=metric_val_label - bias, alpha=0.8**i, label=f'1/{label}', c='black')
 
     labelLines(axs.get_lines(), zorder=2.5, xvals=(
-        15, 20, 25, 35, 40, 45, 25, 30, 35, 40, 45))
+        15, 20, 15, 30, 35, 40, 25, 30, 35, 40, 45))
     axs.set_title(special, fontsize=20)
-    # axs.set_xlim(VARYING_SNR_LOW + SNR_VS_FAR_BAR / 2,
-    #              VARYING_SNR_HIGH - SNR_VS_FAR_BAR / 2)
     if not hrss:
-        axs.set_xlim(12.5,50)
+        axs.set_xlim(VARYING_SNR_LOW + SNR_VS_FAR_BAR / 2,
+                     VARYING_SNR_HIGH - SNR_VS_FAR_BAR / 2)
     else:
-        None #figure this out
+        None # figure this out
     axs.set_ylim(-40,-5)
 
-    # plt.yscale('log')
     plt.grid(True)
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
@@ -476,13 +473,12 @@ def make_roc_curves(datas,
         hrss=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
-        'bbh': 'blue',
-        'sg': 'red',
-        'sglf': 'red',
-        'sghf': 'orange',
-        'wnbhf': 'darkviolet',
-        'wnblf': 'deeppink',
-        'supernova': 'goldenrod'
+        'bbh': 'steelblue',
+        'sglf': 'salmon',
+        'sghf': 'goldenrod',
+        'wnbhf': 'purple',
+        'wnblf': 'hotpink',
+        'supernova': 'darkorange'
     }
     if not hrss:
         axs.set_xlabel(f'SNR', fontsize=20)
@@ -535,7 +531,7 @@ def make_roc_curves(datas,
         am_bin_total = [0]*nbins
         for i, am in enumerate(amp_measure):
             insert_location = np.searchsorted(am_bins, am)
-            #print(am) 
+            #print(am)
             if insert_location >= 200:
                 continue
             #print(insert_location)
@@ -555,7 +551,7 @@ def make_roc_curves(datas,
 
 
     # plt.yscale('log')
-    
+
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
@@ -624,7 +620,7 @@ def main(args):
     do_make_roc_curves = 1
 
     if do_snr_vs_far or do_make_roc_curves:
-        
+
         metric_coefs = np.load(f'{args.data_predicted_path}/trained/final_metric_params.npy')
         means, stds = np.load(f'{args.data_predicted_path}/trained/norm_factor_params.npy')
         tags = ['bbh', 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
@@ -649,12 +645,12 @@ def main(args):
 
             data = (data - means) / stds
             data = data#[1000:]
-            snrs = np.load(f'/home/katya.govorkova/gw-anomaly/output/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-            hrss = np.load(f'/home/katya.govorkova/gw-anomaly/output/data/{tag}_varying_snr_hrss.npz.npy')
+            snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            # hrss = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
-            hrss_dict[tag] = hrss
+            # hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
         for smoothing_window in SMOOTHING_KERNEL_SIZES:
@@ -690,16 +686,16 @@ def main(args):
                                     f'ROC plots, SNR, window: {smoothing_window}',
                                     bias,
                                     smoothing_window=smoothing_window)
-                make_roc_curves([data_dict[elem] for elem in X3],
-                                    [hrss_dict[elem] for elem in X3],
-                                    model,
-                                    far_hist,
-                                    X3,
-                                    args.plot_savedir,
-                                    f'ROC plots, hrss, window: {smoothing_window}',
-                                    bias,
-                                    smoothing_window=smoothing_window,
-                                    hrss=True)
+                # make_roc_curves([data_dict[elem] for elem in X3],
+                #                     [hrss_dict[elem] for elem in X3],
+                #                     model,
+                #                     far_hist,
+                #                     X3,
+                #                     args.plot_savedir,
+                #                     f'ROC plots, hrss, window: {smoothing_window}',
+                #                     bias,
+                #                     smoothing_window=smoothing_window,
+                #                     hrss=True)
 
     if do_fake_roc:
         far_hist = np.load(f'{args.data_predicted_path}/far_bins.npy')
@@ -722,11 +718,11 @@ def main(args):
             'supernova': 1228
         }
         for tag in tags:
-            strains = np.load(f'output/data/{tag}_varying_snr.npz')['data'][:, inds[tag]]
+            strains = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr.npz')['data'][:, inds[tag]]
             data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')[inds[tag]]
             data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
             data = (data - means) / stds
-            snrs = np.load(f'output/data/{tag}_varying_snr_SNR.npz.npy')[inds[tag]]
+            snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')[inds[tag]]
 
             if RETURN_INDIV_LOSSES:
                 model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
@@ -739,7 +735,7 @@ def main(args):
                     strains, data, snrs, metric_coefs, far_hist, tag, args.plot_savedir, bias, weights)
 
     if do_combined_loss_curves:
-        load_path = 'output/trained/'
+        load_path = f'{args.data_predicted_path}/trained/'
 
         signal_classes = ['bbh', 'sglf', 'sghf']
         tags = ['BBH', 'SG 64-512 Hz', 'SG 512-1024 Hz']
@@ -777,8 +773,8 @@ def main(args):
         snrs = []
         ind = 1
         for tag in tags:
-            strain = np.load(f'output/data/{tag}_varying_snr.npz', mmap_mode='r')['data'][inds[tag]][:, int((1680 + 50) * 4.096):int(4.096 * (1880 - 50))]
-            snr = np.load(f'output/data/{tag}_varying_snr_SNR.npz.npy', mmap_mode='r')[inds[tag]]
+            strain = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr.npz', mmap_mode='r')['data'][inds[tag]][:, int((1680 + 50) * 4.096):int(4.096 * (1880 - 50))]
+            snr = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy', mmap_mode='r')[inds[tag]]
             strains.append(strain)
             snrs.append(snr)
 
@@ -788,7 +784,7 @@ def main(args):
                                    snrs)
 
         strains = []
-        timeslides = np.load('output/data/timeslides.npz', mmap_mode='r')['data']
+        timeslides = np.load(f'{args.data_predicted_path}/data/timeslides.npz', mmap_mode='r')['data']
 
         a = int(340740 * 4.096)
         b = int(a + 100 * 4.096)
@@ -808,7 +804,7 @@ def main(args):
         tags = ['wnbhf', 'wnblf', 'supernova']
         strain_data = []
         for tag in tags:
-            data = np.load(f'output/data/{tag}.npz')['data']
+            data = np.load(f'{args.data_predicted_path}/data/{tag}.npz')['data']
             sample = data[-1, :, 0, int(
                 (1000 - 50) * 4.096):int((1000 + 50) * 4.096)]
             strain_data.append(sample)

@@ -667,7 +667,6 @@ def main(args):
             N_VARYING_SNR_INJECTIONS)
 
         sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
-        print(sampled_hrss)
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
         # 2: create the injections with those signal classes
@@ -681,6 +680,9 @@ def main(args):
         sampled_hrss *= scales
         training_data = BBH_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
+
+        plt.scatter(sampled_hrss, sampled_snr)
+        plt.savefig('output/hrss_vs_snr.png', dpi=300)
 
     elif args.stype == 'sglf_varying_snr' or args.stype == 'sghf_varying_snr' or args.stype == 'sglf_fm_optimization' or args.stype == 'sghf_fm_optimization':
         # 1: generate the polarization files for the signal classes of interest
