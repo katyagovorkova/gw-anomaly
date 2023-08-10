@@ -682,9 +682,6 @@ def main(args):
         training_data = BBH_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
 
-        plt.scatter(sampled_hrss, sampled_snr)
-        plt.savefig("/home/ryan.raikman/s23/temp/hrss_vs_snr.png", dpi=300)
-
     elif args.stype == 'sglf_varying_snr' or args.stype == 'sghf_varying_snr' or args.stype == 'sglf_fm_optimization' or args.stype == 'sghf_fm_optimization':
         # 1: generate the polarization files for the signal classes of interest
         sg_cross, sg_plus = sg_polarization_generator(N_VARYING_SNR_INJECTIONS,
@@ -695,12 +692,14 @@ def main(args):
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
         # 2: create the injections with those signal classes
-        sg_injections, sampled_snr = inject_signal(folder_path=args.folder_path,
+        sg_injections, sampled_snr, scales = inject_signal(folder_path=args.folder_path,
                                                    data=[sg_cross, sg_plus],
                                                    segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
                                                    inject_at_end=True,
                                                    SNR=sampler,
-                                                   return_injection_snr=True)
+                                                   return_injection_snr=True,
+                                                   return_scales=True)
+        sampled_hrss *= scales
         training_data = sg_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
 
@@ -729,7 +728,9 @@ def main(args):
                                                    segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
                                                    inject_at_end=True,
                                                    SNR=sampler,
-                                                   return_injection_snr=True)
+                                                   return_injection_snr=True,
+                                                   return_scales=True)
+        sampled_hrss *= scales
         training_data = dict(data=training_data)
 
     elif args.stype == 'supernova_varying_snr' or args.stype == 'supernova_fm_optimization':
@@ -747,12 +748,14 @@ def main(args):
             VARYING_SNR_DISTRIBUTION, SNR_SN_LOW, SNR_SN_HIGH)
 
         # 2: create injections with those polarizations
-        training_data, sampled_snr = inject_signal(folder_path=args.folder_path,
+        training_data, sampled_snr, scales = inject_signal(folder_path=args.folder_path,
                                                    data=[sn_cross, sn_plus],
                                                    segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
                                                    inject_at_end=True,
                                                    SNR=sampler,
-                                                   return_injection_snr=True)
+                                                   return_injection_snr=True,
+                                                   return_scales=True)
+        sampled_hrss *= scales
         training_data = dict(data=training_data)
 
     elif args.stype == 'wnbhf' or args.stype == 'wnblf':
