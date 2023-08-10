@@ -473,7 +473,8 @@ def make_roc_curves(datas,
         special,
         bias,
         smoothing_window=1,
-        hrss=False):
+        hrss=False,
+        MLy_colors=False):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
         'bbh': 'blue',
@@ -484,6 +485,15 @@ def make_roc_curves(datas,
         'wnblf': 'deeppink',
         'supernova': 'goldenrod'
     }
+    if MLy_colors:
+        colors = {
+            'bbh': "brown",
+            'wnbhf' : "blue",
+            "wnblf" : "lightblue",
+            "sghf" : "darkgreen",
+            "sglf" : "green",
+            "supernova" : "orange"
+        }
     if not hrss:
         axs.set_xlabel(f'SNR', fontsize=20)
     else:
@@ -550,8 +560,10 @@ def make_roc_curves(datas,
             if am_bin_total[i] != 0:
                 TPRs.append(am_bin_detected[i]/am_bin_total[i])
                 snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
-
-        axs.plot(snr_bins_plot, TPRs, label = tag)
+        if tag in colors:
+            axs.plot(snr_bins_plot, TPRs, label = tag, c=colors[tag])
+        else:
+            axs.plot(snr_bins_plot, TPRs, label = tag)
 
 
     # plt.yscale('log')
@@ -690,6 +702,16 @@ def main(args):
                                     f'ROC plots, SNR, window: {smoothing_window}',
                                     bias,
                                     smoothing_window=smoothing_window)
+                make_roc_curves([data_dict[elem] for elem in X3],
+                                    [snrs_dict[elem] for elem in X3],
+                                    model,
+                                    far_hist,
+                                    X3,
+                                    args.plot_savedir,
+                                    f'ROC plots, SNR, window: {smoothing_window}, MLy colors',
+                                    bias,
+                                    smoothing_window=smoothing_window,
+                                    MLy_colors=True)
                 make_roc_curves([data_dict[elem] for elem in X3],
                                     [hrss_dict[elem] for elem in X3],
                                     model,
