@@ -689,8 +689,6 @@ def make_roc_curves_smoothing_comparison(data,
     plt.show()
     plt.close()
 
-    return None
-
 def main(args):
 
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)

@@ -31,10 +31,15 @@ def main(args):
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
         hist = np.zeros(n_bins)
         np.save(args.save_path, hist)
+        for kernel_len in SMOOTHING_KERNEL_SIZES:
+            mod_path = f"{args.save_path[:-4]}_{kernel_len}.npy"
+            hist = np.zeros(n_bins)
+            np.save(mod_path, hist)
 
         # compute the dot product and save that instead
         metric_vals = np.load(args.metric_coefs_path)
         norm_factors = np.load(args.norm_factor_path)
+        norm_factors_cpu = norm_factors[:] #copy
         metric_vals = torch.from_numpy(metric_vals).float().to(DEVICE)
         norm_factors = torch.from_numpy(norm_factors).float().to(DEVICE)
 
@@ -78,7 +83,7 @@ def main(args):
             # flatten batch dimension
             vals = np.reshape(vals, (vals.shape[
                                          0] * vals.shape[1], vals.shape[2]))
-            means, stds = norm_factors[0], norm_factors[1]
+            means, stds = norm_factors_cpu[0], norm_factors_cpu[1]
             vals = (vals - means) / stds
 
             vals = np.matmul(vals, learned_weights) + learned_bias

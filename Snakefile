@@ -66,13 +66,13 @@ rule generate_data:
         omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
         intersections = expand(rules.find_valid_segments.params.save_path,
             period=PERIOD),
-    params:
+    output:
         dependencies = expand(rules.fetch_site_data.output,
                               site=['L1', 'H1'],
                               version=VERSION),
-        file = '/home/katya.govorkova/gw-anomaly/output/data/{dataclass}.npz'
+        file = 'output/data/{dataclass}.npz'
     shell:
-        'python3 scripts/generate.py {input.omicron} {params.file} \
+        'python3 scripts/generate.py {input.omicron} {output.file} \
             --stype {wildcards.dataclass} \
             --intersections {input.intersections} \
             --period {PERIOD}'
@@ -261,7 +261,7 @@ rule plot_results:
         fm_model_path = rules.train_final_metric.params.fm_model_path
     params:
         evaluation_dir = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/',
-        save_path = directory(f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/paper/')
+        save_path = directory(f'/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '
         'python3 scripts/plotting.py {params.evaluation_dir} {params.save_path} \
