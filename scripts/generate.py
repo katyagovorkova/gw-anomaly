@@ -725,7 +725,7 @@ def main(args):
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
 
         # 2: create the injections with those signal classes
-        training_data, sampled_snr = inject_signal(folder_path=args.folder_path,
+        training_data, sampled_snr, scales = inject_signal(folder_path=args.folder_path,
                                                    data=[wnb_cross, wnb_plus],
                                                    segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
                                                    inject_at_end=True,
@@ -757,6 +757,10 @@ def main(args):
                                                    SNR=sampler,
                                                    return_injection_snr=True,
                                                    return_scales=True)
+
+        sampled_hrss = repeat_arr(sampled_hrss[:, np.newaxis], n_repeat)
+        sampled_hrss = sampled_hrss[:,0]
+
         sampled_hrss *= scales
         training_data = dict(data=training_data)
 

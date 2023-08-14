@@ -1,10 +1,15 @@
 import os
+import sys
 import argparse
 import numpy as np
 import torch
+
+sys.path.append(
+    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import SMOOTHING_KERNEL_SIZES
-hists = snakemake.input
-save_path = snakemake.params[0]
+
+hists = snakemake.params[0]
+save_path = snakemake.params[1]
 
 for kernel_len in SMOOTHING_KERNEL_SIZES:
     new_hist = np.zeros((np.load(f"{hists[0][:-4]}_{kernel_len}.npy").shape))
