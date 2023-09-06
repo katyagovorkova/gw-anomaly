@@ -27,32 +27,36 @@ def optimize_hyperplane(signals, backgrounds):
                              0] * backgrounds.shape[1], backgrounds.shape[2]))
 
     sigs = torch.from_numpy(signals).float().to(DEVICE)
-    bkgs = torch.from_numpy(backgrounds).float().to(DEVICE)
+    # bkgs = torch.from_numpy(backgrounds).float().to(DEVICE)
     network = LinearModel(n_dims=sigs.shape[2]).to(DEVICE)
     optimizer = optim.Adam(network.parameters(), lr=SVM_LR)
 
-    for epoch in range(N_SVM_EPOCHS):
-        optimizer.zero_grad()
-        background_MV = network(bkgs)
-        signal_MV = network(sigs)
+    new_shape = backgrounds.shape[0]//10
+    for i in range(10):
+        small_bkgs = torch.from_numpy(backgrounds[i*new_shape:(i+1)*new_shape]).float().to(DEVICE)
 
-        # second index are the indicies
-        signal_MV = torch.min(signal_MV, dim=1)[0]
-        zero = torch.tensor(0).to(DEVICE)
+        for epoch in range(N_SVM_EPOCHS):
+            optimizer.zero_grad()
+            background_MV = network(small_bkgs)
+            signal_MV = network(sigs)
 
-        background_loss = torch.maximum(
-            zero,
-            1 - background_MV).mean()
-        signal_loss = torch.maximum(
-            zero,
-            1 + signal_MV).mean()
+            # second index are the indicies
+            signal_MV = torch.min(signal_MV, dim=1)[0]
+            zero = torch.tensor(0).to(DEVICE)
 
-        loss = background_loss + signal_loss
-        if epoch % 50 == 0:
-            print(network.layer.weight.data.cpu().numpy()[0])
-            print(loss.item())
-        loss.backward()
-        optimizer.step()
+            background_loss = torch.maximum(
+                zero,
+                1 - background_MV).mean()
+            signal_loss = torch.maximum(
+                zero,
+                1 + signal_MV).mean()
+
+            loss = background_loss + signal_loss
+            if epoch % 50 == 0:
+                print(network.layer.weight.data.cpu().numpy()[0])
+                print(loss.item())
+            loss.backward()
+            optimizer.step()
 
     torch.save(network.state_dict(), args.fm_model_path)
     return np.zeros(5)

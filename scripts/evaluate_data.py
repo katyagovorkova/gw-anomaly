@@ -17,9 +17,7 @@ from config import (
     SEGMENT_OVERLAP,
     GPU_NAME,
     CLASS_ORDER,
-    N_SMOOTHING_KERNEL,
     DATA_EVAL_MAX_BATCH,
-    DO_SMOOTHING,
     SEG_NUM_TIMESTEPS,
     RETURN_INDIV_LOSSES,
     SCALE
@@ -69,11 +67,6 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False):
     quak_predictions = quak_predictions[:, edge_start:edge_end, :]
     slice_midpoints = slice_midpoints[edge_start:edge_end]
     final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
-
-    if DO_SMOOTHING:
-        # do it before significance?
-        kernel = torch.ones(
-            (N_batches, final_values.shape[-1], N_SMOOTHING_KERNEL)).float().to(device) / N_SMOOTHING_KERNEL
 
     if return_midpoints:
         return final_values, slice_midpoints

@@ -32,16 +32,24 @@ rule find_valid_segments:
     input:
         hanford_path = 'data/{period}_Hanford_segments.json',
         livingston_path = 'data/{period}_Livingston_segments.json'
+<<<<<<< HEAD
     output:
+=======
+    params:
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
         save_path = 'output/{period}_intersections.npy'
     script:
         'scripts/segments_intersection.py'
 
 rule run_omicron:       
     params:
+<<<<<<< HEAD
         intersections = expand(rules.find_valid_segments.output.save_path,
                 period=PERIOD),
         user_name = 'ryan.raikman',
+=======
+        user_name = 'katya.govorkova',
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
         folder = f'output/omicron/'
     shell:
         'mkdir -p {params.folder}; '
@@ -62,15 +70,24 @@ rule fetch_site_data:
 
 rule generate_data:
     input:
+<<<<<<< HEAD
         omicron = './output/omicron/',
         intersections = expand(rules.find_valid_segments.output.save_path,
+=======
+        omicron = 'output/omicron/',
+        intersections = expand(rules.find_valid_segments.params.save_path,
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
             period=PERIOD),
     params:
         dependencies = expand(rules.fetch_site_data.output,
                                 site=['L1', 'H1'],
                                 version=VERSION)
     output:
+<<<<<<< HEAD
         file = 'output/data/{dataclass}.npz',
+=======
+        file = 'output/{version}/data/{dataclass}.npz'
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'python3 scripts/generate.py {input.omicron} {output.file} \
             --stype {wildcards.dataclass} \
@@ -103,8 +120,13 @@ rule train_quak:
                       dataclass='{dataclass}',
                       version=VERSION),
     # output:
+<<<<<<< HEAD
         savedir = directory('./output/{version}/trained/{dataclass}'),
         model_file = './output/{version}/trained/models/{dataclass}.pt'
+=======
+        savedir = directory('output/{version}/trained/{dataclass}'),
+        model_file = 'output/{version}/trained/models/{dataclass}.pt'
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.savedir}; '
         'python3 scripts/train_quak.py {params.data} {params.model_file} {params.savedir} '
@@ -198,7 +220,11 @@ rule recreation_and_quak_plots:
         test_path = expand(rules.upload_data.output,
                            dataclass='bbh',
                            version=VERSION),
+<<<<<<< HEAD
         savedir = directory('./output/{VERSION}/paper/')
+=======
+        savedir = directory('output/{VERSION}/paper/')
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.savedir}; '
         'python3 scripts/rec_and_quak_plots.py {params.test_path} {params.models} \
@@ -211,7 +237,7 @@ rule compute_far:
         fm_model_path = rules.train_final_metric.params.fm_model_path,
         data_path = expand(rules.generate_timeslides_for_far.params.save_evals_path,
             id='{far_id}',
-            version=VERSION),
+            version='O3av2'),
     params:
         model_path = expand(rules.train_quak.params.model_file,
             dataclass=modelclasses,
@@ -230,9 +256,9 @@ rule compute_far:
 
 rule merge_far_hist:
     input:
-        expand(rules.compute_far.output.save_path,
+        inputs = expand(rules.compute_far.output.save_path,
             far_id=[0,1,2,3],
-            version=VERSION)
+            version=VERSION),
     params:
         save_path = f'output/{VERSION}/far_bins.npy'
     script:
@@ -262,11 +288,30 @@ rule plot_results:
         fm_model_path = rules.train_final_metric.params.fm_model_path
     params:
         evaluation_dir = f'output/{VERSION}/',
+<<<<<<< HEAD
         save_path = directory(f'/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/{VERSION}/paper/')
+=======
+        save_path = directory(f'output/{VERSION}/paper/')
+>>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.save_path}; '
         'python3 scripts/plotting.py {params.evaluation_dir} {params.save_path} \
             {input.fm_model_path}'
+
+rule supervised_bbh:
+    input:
+        bbh = expand(rules.upload_data.output,
+            dataclass='bbh',
+            version=VERSION),
+        timeslides = expand(rules.upload_data.output,
+            dataclass='timeslides',
+            version=VERSION),
+    params:
+        models = 'output/supervised-bbh/model.pt',
+        plots = 'output/supervised-bbh/'
+    shell:
+        'python3 scripts/supervised.py {input.bbh} {input.timeslides} \
+            {params.models} {params.plots}'
 
 rule make_pipeline_plot:
     shell:

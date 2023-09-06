@@ -18,7 +18,8 @@ from config import (
     HISTOGRAM_BIN_MIN,
     RETURN_INDIV_LOSSES,
     FACTORS_NOT_USED_FOR_FM,
-    SMOOTHING_KERNEL_SIZES
+    SMOOTHING_KERNEL_SIZES,
+    DO_SMOOTHING
 )
 
 
@@ -29,12 +30,17 @@ def main(args):
     if args.metric_coefs_path is not None:
         # initialize histogram
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
-        hist = np.zeros(n_bins)
-        np.save(args.save_path, hist)
-        for kernel_len in SMOOTHING_KERNEL_SIZES:
-            mod_path = f"{args.save_path[:-4]}_{kernel_len}.npy"
+
+        if DO_SMOOTHING:
+            for kernel_len in SMOOTHING_KERNEL_SIZES:
+                mod_path = f'{args.save_path[:-4]}_k{kernel_len}.npy'
+                hist = np.zeros(n_bins)
+                np.save(mod_path, hist)
+
+        else:
             hist = np.zeros(n_bins)
-            np.save(mod_path, hist)
+            np.save(args.save_path, hist)
+
 
         # compute the dot product and save that instead
         metric_vals = np.load(args.metric_coefs_path)
@@ -46,9 +52,9 @@ def main(args):
         model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         model.load_state_dict(torch.load(
             args.fm_model_path, map_location=f'cuda:{args.gpu}'))
-        
-        learned_weights = model.layer.weight.cpu().numpy()
-        learned_bias = model.layer.bias.cpu().numpy()
+
+        learned_weights = model.layer.weight.detach().cpu().numpy()
+        learned_bias = model.layer.bias.detach().cpu().numpy()
 
         def update_hist(vals):
             vals = np.array(vals)
@@ -86,25 +92,28 @@ def main(args):
             means, stds = norm_factors_cpu[0], norm_factors_cpu[1]
             vals = (vals - means) / stds
 
-            vals = np.matmul(vals, learned_weights) + learned_bias
-            
+            vals = np.matmul(vals, learned_weights.T) + learned_bias
 
+            if DO_SMOOTHING:
+                for kernel_len in SMOOTHING_KERNEL_SIZES:
+                    if kernel_len == 1:
+                        vals_convolved = vals
+                    else:
+                        kernel = np.ones((kernel_len)) / kernel_len
+                        vals_convolved = np.convolve(vals[:, 0], kernel, mode='valid')
 
-            #update = torch.histc(vals, bins=n_bins,
-            #                     min=-HISTOGRAM_BIN_MIN, max=HISTOGRAM_BIN_MIN)
-            for kernel_len in SMOOTHING_KERNEL_SIZES:
-                if kernel_len == 1:
-                    vals_convolved = vals
-                else:
-                    kernel = np.ones((kernel_len)) / kernel_len
-                    vals_convolved = np.convolve(vals, kernel, mode='valid')
+                    update,_ = np.histogram(vals_convolved, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
 
-                update = np.histogram(vals_convolved, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
-                
-                mod_path = f"{args.save_path[:-4]}_{kernel_len}.npy"
-                past_hist = np.load(mod_path)
+                    mod_path = f"{args.save_path[:-4]}_k{kernel_len}.npy"
+                    past_hist = np.load(mod_path)
+                    new_hist = past_hist + update
+                    np.save(mod_path, new_hist)
+
+            else:
+                update,_ = np.histogram(vals, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
+                past_hist = np.load(args.save_path)
                 new_hist = past_hist + update
-                np.save(mod_path, new_hist)
+                np.save(args.save_path, new_hist)
 
         # load pre-computed timeslides evaluations
         for folder in args.data_path:
