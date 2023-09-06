@@ -212,7 +212,7 @@ rule compute_far:
         fm_model_path = rules.train_final_metric.params.fm_model_path,
         data_path = expand(rules.generate_timeslides_for_far.params.save_evals_path,
             id='{far_id}',
-            version=VERSION),
+            version='O3av2'),
     params:
         model_path = expand(rules.train_quak.params.model_file,
             dataclass=modelclasses,
@@ -230,10 +230,11 @@ rule compute_far:
             --gpu {wildcards.far_id}'
 
 rule merge_far_hist:
-    params:
+    input:
         inputs = expand(rules.compute_far.output.save_path,
             far_id=[0,1,2,3],
             version=VERSION),
+    params:
         save_path = f'output/{VERSION}/far_bins.npy'
     script:
         'scripts/merge_far_hist.py'
@@ -267,6 +268,21 @@ rule plot_results:
         'mkdir -p {params.save_path}; '
         'python3 scripts/plotting.py {params.evaluation_dir} {params.save_path} \
             {input.fm_model_path}'
+
+rule supervised_bbh:
+    input:
+        bbh = expand(rules.upload_data.output,
+            dataclass='bbh',
+            version=VERSION),
+        timeslides = expand(rules.upload_data.output,
+            dataclass='timeslides',
+            version=VERSION),
+    params:
+        models = 'output/supervised-bbh/model.pt',
+        plots = 'output/supervised-bbh/'
+    shell:
+        'python3 scripts/supervised.py {input.bbh} {input.timeslides} \
+            {params.models} {params.plots}'
 
 rule make_pipeline_plot:
     shell:

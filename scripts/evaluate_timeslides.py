@@ -33,7 +33,7 @@ def main(args):
 
         if DO_SMOOTHING:
             for kernel_len in SMOOTHING_KERNEL_SIZES:
-                mod_path = f'{args.save_path[:-4]}_{kernel_len}.npy'
+                mod_path = f'{args.save_path[:-4]}_k{kernel_len}.npy'
                 hist = np.zeros(n_bins)
                 np.save(mod_path, hist)
 
@@ -94,21 +94,26 @@ def main(args):
 
             vals = np.matmul(vals, learned_weights.T) + learned_bias
 
-            #update = torch.histc(vals, bins=n_bins,
-            #                     min=-HISTOGRAM_BIN_MIN, max=HISTOGRAM_BIN_MIN)
-            for kernel_len in SMOOTHING_KERNEL_SIZES:
-                if kernel_len == 1:
-                    vals_convolved = vals
-                else:
-                    kernel = np.ones((kernel_len)) / kernel_len
-                    vals_convolved = np.convolve(vals[:, 0], kernel, mode='valid')
+            if DO_SMOOTHING:
+                for kernel_len in SMOOTHING_KERNEL_SIZES:
+                    if kernel_len == 1:
+                        vals_convolved = vals
+                    else:
+                        kernel = np.ones((kernel_len)) / kernel_len
+                        vals_convolved = np.convolve(vals[:, 0], kernel, mode='valid')
 
-                update,_ = np.histogram(vals_convolved, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
-                
-                mod_path = f"{args.save_path[:-4]}_{kernel_len}.npy"
-                past_hist = np.load(mod_path)
+                    update,_ = np.histogram(vals_convolved, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
+
+                    mod_path = f"{args.save_path[:-4]}_k{kernel_len}.npy"
+                    past_hist = np.load(mod_path)
+                    new_hist = past_hist + update
+                    np.save(mod_path, new_hist)
+
+            else:
+                update,_ = np.histogram(vals, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
+                past_hist = np.load(args.save_path)
                 new_hist = past_hist + update
-                np.save(mod_path, new_hist)
+                np.save(args.save_path, new_hist)
 
         # load pre-computed timeslides evaluations
         for folder in args.data_path:

@@ -667,6 +667,7 @@ def main(args):
             N_VARYING_SNR_INJECTIONS)
 
         sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
+
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
         # 2: create the injections with those signal classes
