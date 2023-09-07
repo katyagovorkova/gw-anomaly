@@ -32,24 +32,14 @@ rule find_valid_segments:
     input:
         hanford_path = 'data/{period}_Hanford_segments.json',
         livingston_path = 'data/{period}_Livingston_segments.json'
-<<<<<<< HEAD
-    output:
-=======
     params:
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
         save_path = 'output/{period}_intersections.npy'
     script:
         'scripts/segments_intersection.py'
 
 rule run_omicron:       
     params:
-<<<<<<< HEAD
-        intersections = expand(rules.find_valid_segments.output.save_path,
-                period=PERIOD),
-        user_name = 'ryan.raikman',
-=======
         user_name = 'katya.govorkova',
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
         folder = f'output/omicron/'
     shell:
         'mkdir -p {params.folder}; '
@@ -59,7 +49,7 @@ rule run_omicron:
 rule fetch_site_data:
     input:
         omicron = rules.run_omicron.params.folder,
-        intersections = expand(rules.find_valid_segments.output.save_path,
+        intersections = expand(rules.find_valid_segments.params.save_path,
             period=PERIOD)
     output:
         'tmp/dummy_{version}_{site}.txt'
@@ -70,24 +60,15 @@ rule fetch_site_data:
 
 rule generate_data:
     input:
-<<<<<<< HEAD
-        omicron = './output/omicron/',
-        intersections = expand(rules.find_valid_segments.output.save_path,
-=======
         omicron = 'output/omicron/',
         intersections = expand(rules.find_valid_segments.params.save_path,
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
             period=PERIOD),
     params:
         dependencies = expand(rules.fetch_site_data.output,
                                 site=['L1', 'H1'],
                                 version=VERSION)
     output:
-<<<<<<< HEAD
-        file = 'output/data/{dataclass}.npz',
-=======
         file = 'output/{version}/data/{dataclass}.npz'
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'python3 scripts/generate.py {input.omicron} {output.file} \
             --stype {wildcards.dataclass} \
@@ -119,14 +100,8 @@ rule train_quak:
         data = expand(rules.upload_data.output,
                       dataclass='{dataclass}',
                       version=VERSION),
-    # output:
-<<<<<<< HEAD
-        savedir = directory('./output/{version}/trained/{dataclass}'),
-        model_file = './output/{version}/trained/models/{dataclass}.pt'
-=======
         savedir = directory('output/{version}/trained/{dataclass}'),
         model_file = 'output/{version}/trained/models/{dataclass}.pt'
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.savedir}; '
         'python3 scripts/train_quak.py {params.data} {params.model_file} {params.savedir} '
@@ -220,11 +195,7 @@ rule recreation_and_quak_plots:
         test_path = expand(rules.upload_data.output,
                            dataclass='bbh',
                            version=VERSION),
-<<<<<<< HEAD
-        savedir = directory('./output/{VERSION}/paper/')
-=======
         savedir = directory('output/{VERSION}/paper/')
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.savedir}; '
         'python3 scripts/rec_and_quak_plots.py {params.test_path} {params.models} \
@@ -288,11 +259,7 @@ rule plot_results:
         fm_model_path = rules.train_final_metric.params.fm_model_path
     params:
         evaluation_dir = f'output/{VERSION}/',
-<<<<<<< HEAD
-        save_path = directory(f'/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/{VERSION}/paper/')
-=======
         save_path = directory(f'output/{VERSION}/paper/')
->>>>>>> 5ea4d09861739190511310ea756db42aaf3de3fa
     shell:
         'mkdir -p {params.save_path}; '
         'python3 scripts/plotting.py {params.evaluation_dir} {params.save_path} \
