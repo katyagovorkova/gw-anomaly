@@ -18,9 +18,7 @@ from config import (
     BANDPASS_LOW,
     FACTORS_NOT_USED_FOR_FM
     )
-
 from helper_functions import far_to_metric, compute_fars
-
 DEVICE = torch.device(GPU_NAME)
 
 
@@ -71,7 +69,6 @@ def whiten_bandpass_resample(
         
     return [strainH1, strainL1]
 
-
 def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=None):
     supervised_model = False
     if trained_path[:-1].split("/")[-1]=="O3av2_non_linear_bbh_only":
@@ -82,7 +79,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
     #break the strain into pieces along the time axis to fit into GPU memory
     max_gpu_seconds =350 # 500 seconds at a time
-
     max_gpu_dtps = max_gpu_seconds * SAMPLE_RATE
 
     n_splits = (strain.shape[2] // max_gpu_dtps) + 1 
@@ -124,11 +120,9 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     scaled_evals = []
     for elem in evals:
         elem = (elem - norm_factors[0]) / norm_factors[1]
-
         if not supervised_model:
             scaled_eval = np.multiply(elem, linear_weights)
             scaled_evals.append(scaled_eval[0, :, :])
-
         elem = torch.from_numpy(elem).to(DEVICE)
         scores.append(fm_model(elem).detach().cpu().numpy()[0, :, 0])
 
@@ -142,7 +136,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     top_trim = - bottom_trim
     for elem in scores:
         scores_.append(np.convolve(elem, kernel, mode='same')[bottom_trim:top_trim])
-
     if not supervised_model:
         scaled_evals_ = []
         for elem in scaled_evals:
@@ -156,7 +149,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         midpoints_.append(elem[bottom_trim:top_trim])
     midpoints = midpoints_
     #print(scaled_evals[0].shape)
-
     
     #print(scaled_evals.shape)
     if not supervised_model:
@@ -181,7 +173,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         far_bins = np.load(f"/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/far_bins_k{kernel_len}.npy")
 
     far_bar = far_to_metric(3600*24*2, far_bins)
-
     #print("1/2 day bar", far_bar)
     all_midpoints = np.hstack(midpoints)
     #passed_scores = []
@@ -196,12 +187,10 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     #condense back into one array
     scores = np.hstack(scores)
     midpoints = np.hstack(passed_midpoints)
-
     try:
         os.makedirs(f'{savedir}/{start_point}/')
     except FileExistsError:
         None
-
 
     plt.plot(all_midpoints[200:-200], scores[200:-200])
     plt.xlabel("Datapoints")
@@ -222,7 +211,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     
     
     matplotlib.rcParams.update({'font.size': 22})
-
 
     gps_times = []
     best_scores = []

@@ -8,8 +8,8 @@ sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import DO_SMOOTHING, SMOOTHING_KERNEL_SIZES
 
-hists = snakemake.params[0]
-save_path = snakemake.output[0]
+hists = snakemake.input
+save_path = snakemake.params[0]
 
 if DO_SMOOTHING:
 
