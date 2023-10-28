@@ -37,7 +37,10 @@ from config import (
     VARYING_SNR_LOW,
     VARYING_SNR_HIGH,
     SNR_VS_FAR_HL_LABELS,
-    SNR_VS_FAR_HORIZONTAL_LINES
+    SNR_VS_FAR_HORIZONTAL_LINES,
+    SUPERVISED_FAR_TIMESLIDE_LEN
+
+  
 )
 from helper_functions import (far_to_metric)
 from labellines import labelLines
@@ -85,10 +88,15 @@ class SupervisedModel(nn.Module):
         self.linear_passthrough = nn.Linear(
             2 * seq_len, self.encoder_dense_scale * 2)
         self.linear3 = nn.Linear(
-            in_features=self.encoder_dense_scale * 4, out_features=1)
+            in_features=self.encoder_dense_scale * 4, out_features=21-len(FACTORS_NOT_USED_FOR_FM))
 
         self.linearH = nn.Linear(4 * seq_len, 2**7)
         self.linearL = nn.Linear(4 * seq_len, 2**7)
+
+        self.layer1 = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM), 32)
+        self.layer2 = nn.Linear(32, 32)
+        self.layer3 = nn.Linear(32, 32)
+        self.layer4 = nn.Linear(32, 1)
 
     def forward(self, x):
         batch_size = x.shape[0]
@@ -109,9 +117,12 @@ class SupervisedModel(nn.Module):
         x = F.tanh(self.linear2(x))
         x = torch.cat([x, other_dat], axis=1)
         #print("216", x.shape)
-        x = F.sigmoid(self.linear3(x))
+        x = F.relu(self.linear3(x))
 
-        return x
+        x = F.relu(self.layer1(x))
+        x = F.relu(self.layer2(x))
+        x = F.relu(self.layer3(x))
+        return F.sigmoid(self.layer4(x))
 
 # class SupervisedModel(nn.Module):
 
@@ -156,7 +167,8 @@ def calculate_means(metric_vals, snrs, bar):
 
     return np.array(snr_plot), np.array(means), np.array(stds)
 
-def make_bkg_from_timeslides(data_path, gpu, 
+def make_bkg_from_timeslides(data_path, gpu,
+
                              timeslide_total_duration=SUPERVISED_BKG_TIMESLIDE_LEN,
                              return_raw_timeslide=False):
 
@@ -166,7 +178,6 @@ def make_bkg_from_timeslides(data_path, gpu,
 
     reduction = 20  # for things to fit into memory nicely
 
-    #timeslide_total_duration = 
     sample_length = data.shape[1] / SAMPLE_RATE
     n_timeslides = int(timeslide_total_duration //
                         sample_length) * reduction
@@ -224,10 +235,11 @@ def inverter(x):
     # logit(1-x), map signals to zero and invert the sigmoid
     return torch.log((1-x)/(x))
 
+  
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
     if not os.path.exists(f'{args.save_file}'):
-        
+
         bkg_data = make_bkg_from_timeslides(args.data_path, args.gpu) #(N_data, 2, 200)
         print(f'Shape: {bkg_data.shape}')
         # bkg_data = torch.reshape(bkg_data, (bkg_data.shape[0], bkg_data.shape[1]*bkg_data.shape[2]))
@@ -337,7 +349,8 @@ def main(args):
 
                 print(f'data: {data_name}, epoch: {epoch_count}, train loss: {epoch_train_loss :.4f}, val loss: {validation_loss :.4f}, time: {elapsed_time :.4f}')
 
-            
+
+
 
             if early_stopper.early_stop(validation_loss):
                 break
@@ -372,18 +385,18 @@ def main(args):
     else: # bypass having to train the model each time, just load it if it exists (has been trained) already
         model = SupervisedModel(200,2).to(DEVICE)
         model.load_state_dict(torch.load(f'{args.save_file}'))
-        print(model)        
 
-    # RYAN EDITS BEGIN - 
+        print(model)
+
     # 1) evaluate on timeslides to get metric values for certain false alarm rates (let's say for 1/month, especially as everything is being run in 1 file)
     # 2) plot ROC & detection efficiency
 
     if not os.path.exists(f"{args.savedir}/far_hist.npy"):
         # create timeslides for FAR computation
-        bkg_data = make_bkg_from_timeslides(args.data_path, args.gpu, 
-                                            timeslide_total_duration=SUPERVISED_FAR_TIMESLIDE_LEN, 
+        bkg_data = make_bkg_from_timeslides(args.data_path, args.gpu,
+                                            timeslide_total_duration=SUPERVISED_FAR_TIMESLIDE_LEN,
                                             return_raw_timeslide=True) #(N, 734000) (length of 1 "slide" in datapoints)
-        
+
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
         hist = np.zeros(n_bins)
 
@@ -398,8 +411,8 @@ def main(args):
             seg = seg[:, :(seg.shape[1]//SEG_NUM_TIMESTEPS) *SEG_NUM_TIMESTEPS ].T
             segs = seg.unfold(dimension=0, size=SEG_NUM_TIMESTEPS, step=SEGMENT_OVERLAP)
             # segs shape (N, 200)
-            evals = model(segs)[:, 0]
-            
+            evals = inverter(model(segs))[:, 0]
+
             # smoothing
             #evals = evals.detach().cpu().numpy()
             #evals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SUPERVISED_SMOOTHING_KERNEL)/SUPERVISED_SMOOTHING_KERNEL, mode='same'),
@@ -413,74 +426,77 @@ def main(args):
 
             update = torch.histc(seg_smooth, bins=n_bins,
                                     min=-HISTOGRAM_BIN_MIN, max=HISTOGRAM_BIN_MIN)
-            
+
             hist = hist + update.cpu().numpy()
             del evals
 
         np.save(f"{args.savedir}/far_hist.npy", hist)
-    
+
     else:
         hist = np.load(f"{args.savedir}/far_hist.npy")
 
     # hist assembled by this point
 
-    plotting_data = None # can you (katya) fill this in?
-    SNRs = np.random.uniform(10, 50, (1000)) # and this?
-    plotting_data = np.random.normal(0, 1, (1000, 2500, 2)) # (N_samples, length in datapoints, N_detectors)
-    assert plotting_data is not None
-
+    data_path = "/home/katya.govorkova/gw-anomaly/output/O3av2/data/"
+    plotting_data = np.load(f"{data_path}/bbh_varying_snr.npz")['data']
+    plotting_data = np.swapaxes(plotting_data, 1, 2)
+    SNRs = np.load(f"{data_path}/bbh_varying_snr_SNR.npz.npy")
 
     plotting_data = torch.from_numpy(plotting_data).float().to(DEVICE)
     plotting_data = plotting_data.unfold(dimension=1, size=SEG_NUM_TIMESTEPS, step=SEGMENT_OVERLAP)
-    
+
+
     # just do it one-by-one here, doesn't take that much time
     model = model.to(DEVICE)
     minvals = []
     for n in range(len(plotting_data)):
-        eval = model(plotting_data[n]).detach().cpu().numpy()
-        
+        eval = inverter(model(plotting_data[n])).detach().cpu().numpy()
+
         # numpy smoothing convolution, not many datapoints
         eval = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SUPERVISED_SMOOTHING_KERNEL)/SUPERVISED_SMOOTHING_KERNEL, mode='valid'),
             axis=0,
             arr=eval)
-        
+
         minval = np.min(eval)
         minvals.append(minval)
 
     fm_vals = np.array(minvals)
     amp_measure = SNRs
-
-    
-    amp_measure_plot, means_plot, stds_plot = calculate_means(
-                fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
-
-    fig, axs = plt.subplots(1, figsize=(12, 8))
-    axs.plot(amp_measure_plot, means_plot, color="blue", label=f'BBH', linewidth=2)
-    axs.fill_between(amp_measure_plot,
-                    (means_plot) - stds_plot / 2,
-                    (means_plot) + stds_plot / 2,
-                    alpha=0.15,
-                    color="blue")
     far_hist = hist
-    for i, label in enumerate(SNR_VS_FAR_HL_LABELS):
-        metric_val_label = far_to_metric(
-            SNR_VS_FAR_HORIZONTAL_LINES[i], far_hist)
-        print(label, metric_val_label)
-        if metric_val_label is not None:
-            axs.axhline(y=metric_val_label, alpha=0.8**i, label=f'1/{label}', c='black')
 
-    labelLines(axs.get_lines(), zorder=2.5, xvals=(
-        15, 20, 15, 30, 35, 40, 25, 30, 35, 40, 45))
+    show_detec_effic = False
+    if show_detec_effic:
+        amp_measure_plot, means_plot, stds_plot = calculate_means(
+                    fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
 
-    axs.set_title("Supervised Detection Efficiency", fontsize=20)
-        
+        fig, axs = plt.subplots(1, figsize=(12, 8))
+        axs.plot(amp_measure_plot, means_plot, color="blue", label=f'BBH', linewidth=2)
+        axs.fill_between(amp_measure_plot,
+                        (means_plot) - stds_plot / 2,
+                        (means_plot) + stds_plot / 2,
+                        alpha=0.15,
+                        color="blue")
 
-    #axs.set_ylim(-40,0)
+        for i, label in enumerate(SNR_VS_FAR_HL_LABELS):
+            metric_val_label = far_to_metric(
+                SNR_VS_FAR_HORIZONTAL_LINES[i], far_hist)
+            print(label, metric_val_label)
+            if metric_val_label is not None:
+                axs.axhline(y=metric_val_label, alpha=0.8**i, label=f'1/{label}', c='black')
 
-    plt.grid(True)
-    fig.tight_layout()
-    plt.savefig(f'{args.savedir}/bbh_detection_efficiency.pdf', dpi=300)
-    plt.close()
+        labelLines(axs.get_lines(), zorder=2.5, xvals=(
+            15, 20, 15, 30, 35, 40, 25, 30, 35, 40, 45))
+
+        axs.set_title("Supervised Detection Efficiency", fontsize=20)
+
+
+        #axs.set_ylim(-40,0)
+
+        plt.grid(True)
+        fig.tight_layout()
+        plt.savefig(f'{args.savedir}/bbh_detection_efficiency.pdf', dpi=300)
+        plt.close()
+
 
 
     # make the ROC curve
@@ -493,7 +509,8 @@ def main(args):
     print("CHANGE FROM 1/HOUR!!")
     axs.set_ylabel('Fraction of events detected at FAR 1/hour', fontsize=20)
     metric_val_label = far_to_metric(
-            3600, far_hist)
+            12*30*24*3600, far_hist)
+
 
     nbins = len(am_bins)
     am_bin_detected = [0]*nbins
@@ -517,12 +534,12 @@ def main(args):
             snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
 
     axs.plot(snr_bins_plot, TPRs, label="BBH", c="blue")
-        
+
     plt.grid(True)
     fig.tight_layout()
     plt.savefig(f'{args.savedir}/bbh_ROC.pdf', dpi=300)
     plt.close()
-        
+
 
 
 if __name__ == '__main__':
