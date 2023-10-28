@@ -503,7 +503,8 @@ def inject_hplus_hcross(
         SNR=None,
         get_psds=False,
         detector_psds=None,
-        inject_at_end=False):
+        inject_at_end=False,
+        return_scale=False):
 
     final_injects = []
     final_injects_nonoise = []
@@ -625,7 +626,11 @@ def inject_hplus_hcross(
         # np.newaxis changes shape from (detector, timeaxis) to (detector, 1, timeaxis) for stacking into batches
 
     if len(with_noise) == 1:
+        if return_scale == True:
+            return with_noise[0], response_scales[0]
         return with_noise[0], no_noise[0]
+    elif return_scale == True:
+        return with_noise, response_scales
     else:
         return with_noise, no_noise
 
