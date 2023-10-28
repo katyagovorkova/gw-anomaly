@@ -19,7 +19,8 @@ from config import (
     RETURN_INDIV_LOSSES,
     FACTORS_NOT_USED_FOR_FM,
     SMOOTHING_KERNEL_SIZES,
-    DO_SMOOTHING
+    DO_SMOOTHING,
+    GPU_NAME
 )
 
 
@@ -148,6 +149,28 @@ def main(args):
                            sample_length) * reduction
         print('Number of timeslides:', n_timeslides)
 
+
+        def extract_chunks(time_series, important_points, window_size=2048):
+            # Determine the dimensions of the output array
+            n_chunks = len(important_points)
+            chunk_length = 2 * window_size + 1
+            
+            # Initialize an empty array to store the chunks
+            chunks = np.zeros((2, n_chunks, chunk_length))
+            
+            for idx, point in enumerate(important_points):
+                # Define the start and end points for extraction
+                start = max(0, point - window_size)
+                end = min(time_series.shape[1], point + window_size + 1)
+                
+                # Handle edge cases
+                extracted_start = window_size - (point - start)
+                extracted_end = extracted_start + (end - start)
+                
+                chunks[:, idx, extracted_start:extracted_end] = time_series[:, start:end]
+            
+            return chunks
+
         for timeslide_num in range(1, n_timeslides + 1):
             print(f'starting timeslide: {timeslide_num}/{n_timeslides}')
 
@@ -172,13 +195,55 @@ def main(args):
             timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
             final_values = full_evaluation(
                 timeslide[None, :, :], args.model_folder_path, DEVICE)
-
+            print(final_values.shape)
             print('saving, individually')
             means, stds = torch.mean(
                 final_values, axis=-2), torch.std(final_values, axis=-2)
             means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
             np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
             final_values = final_values.detach().cpu().numpy()
+            if True: 
+                FAR_2days = -1.617 #lowest FAR bin we have
+                norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+                fm_model_path = (f"/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+                fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+                fm_model.load_state_dict(torch.load(
+                    fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
+                linear_weights = fm_model.layer.weight.detach().cpu().numpy()
+                bias_value = fm_model.layer.bias.detach().cpu().numpy()
+
+                # Inferenc to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
+                scores = []
+                scaled_evals = []
+                for elem in final_values[0]:
+                    elem = np.delete(elem, FACTORS_NOT_USED_FOR_FM, -1)
+                    elem = (elem - norm_factors[0]) / norm_factors[1]
+                    scaled_eval = np.multiply(elem, linear_weights)
+                    #assert 0
+                    scaled_evals.append(scaled_eval[0, :])
+                    elem = torch.from_numpy(elem).to(DEVICE)
+                    scores.append(fm_model(elem).detach().cpu().numpy())# - bias_value)
+                
+                scores = np.array(scores)
+                scaled_evals = np.array(scaled_evals)
+
+                indices = np.where(scores < FAR_2days)[0]
+                filtered_final_score = scores[indices]
+                filtered_final_scaled_evals = scaled_evals[indices]
+                timeslide = timeslide.detach().cpu().numpy()
+
+                #extract important timeslides with indices
+                important_timeslide = extract_chunks(timeslide, indices, window_size=1024)
+                
+                #print(indices, filtered_final_score)
+                #print("timeslide shape", important_timeslide.shape)
+                #print("filtered_final_score", filtered_final_score.shape)
+                #print("scaled_evals", filtered_final_scaled_evals.shape)
+
+                np.savez(f'{args.save_evals_path}/timeslide_evals_FULL_{timeslide_num}.npz',
+                                             final_scaled_evals=filtered_final_scaled_evals,
+                                             metric_score = filtered_final_score,
+                                             timeslide_data = important_timeslide)
 
             # save as a numpy file, with the index of timeslide_num
             np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
