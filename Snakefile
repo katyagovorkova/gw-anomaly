@@ -37,17 +37,14 @@ rule find_valid_segments:
     script:
         'scripts/segments_intersection.py'
 
-rule run_omicron:
-    input:
-        intersections = expand(rules.find_valid_segments.params.save_path,
-            period=PERIOD)
+rule run_omicron:       
     params:
         user_name = 'katya.govorkova',
         folder = f'output/omicron/'
     shell:
         'mkdir -p {params.folder}; '
         'ligo-proxy-init {params.user_name}; '
-        'python3 scripts/run_omicron.py {input.intersections} {params.folder}'
+        'python3 scripts/run_omicron.py {params.intersections} {params.folder}'
 
 rule fetch_site_data:
     input:
@@ -68,8 +65,8 @@ rule generate_data:
             period=PERIOD),
     params:
         dependencies = expand(rules.fetch_site_data.output,
-                              site=['L1', 'H1'],
-                              version=VERSION),
+                                site=['L1', 'H1'],
+                                version=VERSION)
     output:
         file = 'output/{version}/data/{dataclass}.npz'
     shell:
