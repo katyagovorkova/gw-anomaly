@@ -39,6 +39,8 @@ from config import (
     SNR_VS_FAR_HL_LABELS,
     SNR_VS_FAR_HORIZONTAL_LINES,
     SUPERVISED_FAR_TIMESLIDE_LEN
+
+  
 )
 from helper_functions import (far_to_metric)
 from labellines import labelLines
@@ -166,6 +168,7 @@ def calculate_means(metric_vals, snrs, bar):
     return np.array(snr_plot), np.array(means), np.array(stds)
 
 def make_bkg_from_timeslides(data_path, gpu,
+
                              timeslide_total_duration=SUPERVISED_BKG_TIMESLIDE_LEN,
                              return_raw_timeslide=False):
 
@@ -175,7 +178,6 @@ def make_bkg_from_timeslides(data_path, gpu,
 
     reduction = 20  # for things to fit into memory nicely
 
-    #timeslide_total_duration =
     sample_length = data.shape[1] / SAMPLE_RATE
     n_timeslides = int(timeslide_total_duration //
                         sample_length) * reduction
@@ -233,6 +235,7 @@ def inverter(x):
     # logit(1-x), map signals to zero and invert the sigmoid
     return torch.log((1-x)/(x))
 
+  
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
     if not os.path.exists(f'{args.save_file}'):
@@ -348,6 +351,7 @@ def main(args):
 
 
 
+
             if early_stopper.early_stop(validation_loss):
                 break
 
@@ -381,9 +385,9 @@ def main(args):
     else: # bypass having to train the model each time, just load it if it exists (has been trained) already
         model = SupervisedModel(200,2).to(DEVICE)
         model.load_state_dict(torch.load(f'{args.save_file}'))
+
         print(model)
 
-    # RYAN EDITS BEGIN -
     # 1) evaluate on timeslides to get metric values for certain false alarm rates (let's say for 1/month, especially as everything is being run in 1 file)
     # 2) plot ROC & detection efficiency
 
@@ -441,6 +445,7 @@ def main(args):
     plotting_data = torch.from_numpy(plotting_data).float().to(DEVICE)
     plotting_data = plotting_data.unfold(dimension=1, size=SEG_NUM_TIMESTEPS, step=SEGMENT_OVERLAP)
 
+
     # just do it one-by-one here, doesn't take that much time
     model = model.to(DEVICE)
     minvals = []
@@ -493,6 +498,7 @@ def main(args):
         plt.close()
 
 
+
     # make the ROC curve
     # fm_vals, amp_measure, far_hist
 
@@ -504,6 +510,7 @@ def main(args):
     axs.set_ylabel('Fraction of events detected at FAR 1/hour', fontsize=20)
     metric_val_label = far_to_metric(
             12*30*24*3600, far_hist)
+
 
     nbins = len(am_bins)
     am_bin_detected = [0]*nbins

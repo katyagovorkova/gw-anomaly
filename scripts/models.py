@@ -35,6 +35,23 @@ class LinearModel(nn.Module):
         else:
             return self.layer(x)
 
+class GwakClassifier(nn.Module):
+
+    def __init__(self, n_dims):
+        super(LinearModel, self).__init__()
+        self.layer1 = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM), 32)
+        self.layer2 = nn.Linear(32, 32)
+        self.layer3 = nn.Linear(32, 32)
+        self.layer4 = nn.Linear(32, 1)
+
+
+    def forward(self, x):
+
+        x = F.relu(self.layer1(x))
+        x = F.relu(self.layer2(x))
+        x = F.relu(self.layer3(x))
+        return self.layer4(x)
+
 
 class FAT(nn.Module):
 

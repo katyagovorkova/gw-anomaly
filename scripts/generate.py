@@ -51,7 +51,8 @@ from config import (
     CURRICULUM_SNRS,
     SNR_SN_LOW,
     SNR_SN_HIGH,
-    LOADED_DATA_SAMPLE_RATE  # goes for the SN signals as well
+    LOADED_DATA_SAMPLE_RATE,  # goes for the SN signals as well
+    N_BURST_INJ
 )
 
 
@@ -87,7 +88,8 @@ def calculate_hrss(hcross, hplus):
 
 def bbh_polarization_generator(
         n_injections,
-        segment_length=2):
+        segment_length=2,
+        specified_params=None):
 
     bbh_waveform_args = dict(waveform_approximant='IMRPhenomPv2',
                              reference_frequency=50., minimum_frequency=20.)
@@ -104,6 +106,13 @@ def bbh_polarization_generator(
         dict(zip(injection_parameters, col))
         for col in zip(*injection_parameters.values())
     ]
+    if specified_params is not None:
+        # set for all elements
+        for param in specified_params: #key
+            for inj_param in injection_parameters:
+                inj_param[param] = specified_params[param]
+
+
     for i, p in enumerate(injection_parameters):
         dist = np.random.uniform(50, 200)
         p['luminosity_distance'] = dist
@@ -133,7 +142,8 @@ def bbh_polarization_generator(
 def sg_polarization_generator(
         n_injections,
         segment_length=2,
-        prior_file='data/SG.prior'):
+        prior_file='data/SG.prior',
+        specified_params=None):
 
     waveform = olib_time_domain_sine_gaussian
     waveform_generator = bilby.gw.WaveformGenerator(
@@ -148,6 +158,14 @@ def sg_polarization_generator(
         dict(zip(injection_parameters, col))
         for col in zip(*injection_parameters.values())
     ]
+    print(injection_parameters)
+    assert 0
+    if specified_params is not None:
+        # set for all elements
+        for param in specified_params: #key
+            for inj_param in injection_parameters:
+                inj_param[param] = specified_params[param]
+
     crosses = []
     plusses = []
     for i, p in enumerate(injection_parameters):
@@ -746,6 +764,8 @@ def main(args):
         n_repeat = int(N_VARYING_SNR_INJECTIONS / len(sn_cross))
         sn_cross, sn_plus = repeat_arr(
             sn_cross, n_repeat), repeat_arr(sn_plus, n_repeat)
+        
+        sampled_hrss = repeat_arr(sampled_hrss, n_repeat)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, SNR_SN_LOW, SNR_SN_HIGH)
@@ -794,6 +814,28 @@ def main(args):
 
         training_data = dict(data=clean)
 
+    elif args.stype == "burst_benchmark":
+        def mc(m1, m2):
+            return (m1*m2)**(3/5) / (m1+m2)**(1/5)
+        if 0:
+            # binary black hole mergers
+            bbh_1_cross, bbh_1_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(15, 15)})
+
+            bbh_2_cross, bbh_2_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(25, 25)})
+
+            bbh_3_cross, bbh_3_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(35, 35)})
+
+            # intermediate mass black hole mergers
+            imbbh_1_cross, imbbh_1_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(50, 50)})
+
+            imbbh_2_cross, imbbh_2_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(75, 75)})
+
+            imbbh_3_cross, imbbh_3_plus = bbh_polarization_generator(N_BURST_INJ, specified_params={'mass_ratio': 1, 'chirp_mass':mc(100, 100)})
+
+        # sine gaussians
+
+        
+
     np.savez(args.save_file, **training_data)
 
     if sampled_snr is not None:
@@ -828,7 +870,8 @@ if __name__ == '__main__':
                                            'wnbhf_varying_snr', 'wnblf_varying_snr',
                                            'wnblf_fm_optimization', 'wnbhf_fm_optimization',
                                            'supernova',
-                                           'supernova_varying_snr', 'supernova_fm_optimization'])
+                                           'supernova_varying_snr', 'supernova_fm_optimization',
+                                           'burst_benchmark'])
 
     parser.add_argument('--start', type=str, default=None)
     parser.add_argument('--stop', type=str, default=None)
