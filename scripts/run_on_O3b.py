@@ -5,16 +5,20 @@ import torch
 from gwpy.timeseries import TimeSeries
 from astropy import units as u
 import matplotlib.pyplot as plt
-
+from models import LinearModel, GwakClassifier
 from evaluate_data import full_evaluation
+import json
 from config import (
     CHANNEL,
     GPU_NAME,
     SEGMENT_OVERLAP,
     SAMPLE_RATE,
     BANDPASS_HIGH,
-    BANDPASS_LOW
+    BANDPASS_LOW,
+    FACTORS_NOT_USED_FOR_FM
     )
+from helper_functions import far_to_metric
+DEVICE = torch.device(GPU_NAME)
 
 
 def clustering(x, bar=5*4096/5):
@@ -37,7 +41,8 @@ def whiten_bandpass_resample(
         savedir,
         sample_rate=SAMPLE_RATE,
         bandpass_low=BANDPASS_LOW,
-        bandpass_high=BANDPASS_HIGH):
+        bandpass_high=BANDPASS_HIGH,
+        shift=None):
 
     device = torch.device(GPU_NAME)
 
@@ -48,179 +53,335 @@ def whiten_bandpass_resample(
     t0 = int(strainL1.t0 / u.s)
     print(t0)
 
+    if shift != None:
+        shift_datapoints = shift * sample_rate
+        temp = strainL1[-shift_datapoints:]
+        strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
+        strainL1[:shift_datapoints] = temp
+
     # Whiten, bandpass, and resample
-    strainL1 = strainL1.whiten()
-    strainL1 = strainL1.bandpass(bandpass_low, bandpass_high)
     strainL1 = strainL1.resample(sample_rate)
-
-    strainH1 = strainH1.whiten()
-    strainH1 = strainH1.bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
+    
     strainH1 = strainH1.resample(sample_rate)
+    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
+        
+    return [strainH1, strainL1]
 
-    # split strainL1 and strainH1 into 3 equal-sized parts each for GPU data loading
-    total_elements = strainH1.shape[0]
-    split_size = total_elements // 3
+def get_evals(data, trained_path, savedir, start_point, extra = ""):
+    strain = np.stack(data, axis=1)[np.newaxis, :, :]
+    strain_orig = np.stack(data, axis=1)
+    strain = np.swapaxes(strain, 1, 2) # make it (N_batches, 2, time_axis), N_batches is 1 here
 
-    strain_H1_1 = np.array(strainH1[:split_size])
-    strain_H1_2 = np.array(strainH1[split_size:2*split_size])
-    strain_H1_3 = np.array(strainH1[2*split_size:])
-    strain_L1_1 = np.array(strainL1[:split_size])
-    strain_L1_2 = np.array(strainL1[split_size:2*split_size])
-    strain_L1_3 = np.array(strainL1[2*split_size:])
+    #break the strain into pieces along the time axis to fit into GPU memory
+    max_gpu_seconds = 500 # 500 seconds at a time
+    max_gpu_dtps = max_gpu_seconds * SAMPLE_RATE
 
-    strain_H1_3 = strain_H1_3[:split_size]
-    strain_L1_3 = strain_L1_3[:split_size]
+    n_splits = (strain.shape[2] // max_gpu_dtps) + 1 
+    split_data = []
+    for n in range(n_splits):
+        split_data.append(strain[:, :, n*max_gpu_dtps:(n+1)*max_gpu_dtps])
 
-    if 0:
-        #save files
-        np.save(savedir + '/H1_BurstBenchmark_%s.npy'%int(t0), strain_H1_1)
-        np.save(savedir + '/H1_BurstBenchmark_%s.npy'%int(t0+(split_size/4096)), strain_H1_2)
-        np.save(savedir + '/H1_BurstBenchmark_%s.npy'%int(t0+(2*split_size/4096)), strain_H1_3)
-        np.save(savedir + '/L1_BurstBenchmark_%s.npy'%int(t0), strain_L1_1)
-        np.save(savedir + '/L1_BurstBenchmark_%s.npy'%int(t0+(split_size/4096)), strain_L1_2)
-        np.save(savedir + '/L1_BurstBenchmark_%s.npy'%int(t0+(2*split_size/4096)), strain_L1_3)
 
-    strain_H1 = np.stack([strain_H1_1, strain_H1_2, strain_H1_3], axis=0)
-    strain_L1 = np.stack([strain_L1_1, strain_L1_2, strain_L1_3], axis=0)
-
-    strain = np.stack([strain_H1, strain_L1], axis=1)
-    model_path = 'output/trained/models/'
+    model_path = f"{trained_path}/trained/models/"
     model_paths = []
-    for elem in os.listdir(model_path):
+    for elem in ["background.pt", "bbh.pt",  "glitches.pt", 
+                 "sghf.pt", "sglf.pt"]:
         model_paths.append(f'{model_path}/{elem}')
+
+
+    norm_factors = np.load(f"{trained_path}/trained/norm_factor_params.npy")
+
+    device=DEVICE
     evals = []
     midpoints = []
-    for i in range(3):
-        ev, midp = full_evaluation(strain[i:i+1], model_paths, device, return_midpoints=True)
-        evals.append(ev.detach().cpu().numpy())
-        midpoints.append(midp + split_size*i)
+    for i, strain_elem in enumerate(split_data):
+        ev, mdp = full_evaluation(strain_elem, model_paths, device, return_midpoints=True)
+        ev = ev.cpu().detach().numpy()
+        ev = np.delete(ev, FACTORS_NOT_USED_FOR_FM, -1)
+        evals.append(ev)
+        midpoints.append(mdp+i*(max_gpu_dtps))
+
+    
+    fm_model_path = (f"{trained_path}/trained/fm_model.pt")
+
+    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+    fm_model.load_state_dict(torch.load(
+        fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
+    linear_weights = fm_model.layer.weight.detach().cpu().numpy()
+
+    scores = []
+    scaled_evals = []
+    for elem in evals:
+        elem = (elem - norm_factors[0]) / norm_factors[1]
+        scaled_eval = np.multiply(elem, linear_weights)
+        #assert 0
+        scaled_evals.append(scaled_eval[0, :, :])
+        elem = torch.from_numpy(elem).to(DEVICE)
+        scores.append(fm_model(elem).detach().cpu().numpy()[0, :, 0])
 
 
-    midpoints = np.stack(midpoints)
-    midpoints = np.hstack(midpoints)
-    evals = np.vstack(np.stack(evals, axis=1)[0])
-    params = np.load('output/trained/final_metric_params.npy')
-    means, stds = np.load('output/trained/norm_factor_params.npy')
-    evals = (evals-means)/stds
-    final = np.dot(evals, params)
-    evals = np.multiply(evals, params) #for plotting purposes
-    strains = np.stack([np.array(strainH1), np.array(strainL1)])
-    if 0:
-        np.save('./evals.npy', evals)
-        np.save('./final.npy', final)
-        np.save('./strains.npy', strains)
-        np.save('./midpoints.npy', midpoints)
+    # do smoothing on the scores
+    kernel_len = 50
+    kernel = np.ones(kernel_len)/kernel_len
+    #kernel_evals = np.ones((kernel_len, scaled_evals[0].shape[1]))/kernel_len
+    scores_ = []
+    bottom_trim = kernel_len * 5
+    top_trim = - bottom_trim
+    for elem in scores:
+        scores_.append(np.convolve(elem, kernel, mode='same')[bottom_trim:top_trim])
+    scaled_evals_ = []
+    for elem in scaled_evals:
+        scaled_evals_.append(np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=elem))
+    scaled_evals = scaled_evals_
+    #for elem in 
+    scores = scores_
+    midpoints_ = []
+    for elem in midpoints:
+        midpoints_.append(elem[bottom_trim:top_trim])
+    midpoints = midpoints_
+    #print(scaled_evals[0].shape)
+    scaled_evals = np.concatenate(scaled_evals, axis=0) #same indexing as scores
+    #print(scaled_evals.shape)
 
-    final_metric_bar = -11 # corresponds rougly to 1e-5 or 1/2 days, as they describe it
-    if len(midpoints[final<final_metric_bar]) == 0: return None  # no significant signal found
-    midpoint_clusters = clustering(midpoints[final<final_metric_bar])
+    scaled_evals_ = np.zeros((scaled_evals.shape[0], scaled_evals.shape[1]-4))
+    counter = 0
+    frequency_correlation = np.zeros(scaled_evals.shape[0])
+    for i in range(scaled_evals.shape[1]):
+        if i % 3 == 2:
+            #frequeny correlation value
+            frequency_correlation += scaled_evals[:, i]
+        else:
+            scaled_evals_[:, counter] = scaled_evals[:, i]
+            counter += 1
+
+    scaled_evals_[:, -1] = frequency_correlation
+
+
+
+    far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_{kernel_len}.npy")
+    # set a bar at 1/2 days FAR to get elements of interest
+    far_bar = far_to_metric(3600*24*2, far_bins)
+
+    #print("1/2 day bar", far_bar)
+    all_midpoints = np.hstack(midpoints)
+    #passed_scores = []
+    passed_midpoints = []
+    for i in range(len(scores)):
+        sc = scores[i]
+        mdps = midpoints[i]
+        filter = sc<far_bar 
+        chosen_mdps = mdps[filter]
+        passed_midpoints.append(chosen_mdps)
+
+    #condense back into one array
+    scores = np.hstack(scores)
+    midpoints = np.hstack(passed_midpoints)
+
+    if len(midpoints) == 0:
+        print("Found nothing!")
+        return None
+
+    midpoint_clusters = clustering(midpoints)
     eval_locations = []
+    #print(midpoints)
     for point in midpoint_clusters:
-        eval_locations.append(np.where(midpoints == point)[0][0])
+        eval_locations.append(np.where(all_midpoints == point)[0][0])
 
-    n_detections = len(midpoint_clusters)
     try:
         os.makedirs(f'{savedir}/{start_point}/')
     except FileExistsError:
         None
+
+    plt.plot(all_midpoints[200:-200], scores[200:-200])
+    plt.xlabel("Datapoints")
+    plt.ylabel("Final metric score")
+    plt.savefig(f'{savedir}/{start_point}/eval_timeseries.png', dpi=300)
+    plt.close()
+
+    gps_times = []
+    best_scores = []
     for j in range(len(midpoint_clusters)):
         loudest = eval_locations[j]
+        #print("loudest", loudest)
 
-
-        left_edge = 200
-        right_edge = 400
+        left_edge = 100
+        right_edge = 100
         n_points = left_edge+right_edge
         labels = ['background', 'bbh', 'glitch', 'sglf', 'sghf', 'pearson']
         quak_evals_ts = np.linspace(0, n_points*(SEGMENT_OVERLAP/SAMPLE_RATE), n_points)
-        if len(evals[loudest-left_edge:loudest+right_edge, i]) != len(quak_evals_ts):
-            continue #bypassing edge effects
+        #if len(evals[loudest-left_edge:loudest+right_edge, i]) != len(quak_evals_ts):
+        #    continue #bypassing edge effects
 
-        fig, axs = plt.subplots(1, 2, figsize=(18, 6))
-        for i in range(5):
-            axs[0].plot(quak_evals_ts*1000, evals[loudest-left_edge:loudest+right_edge, i], label = labels[i])
-        axs[0].plot(quak_evals_ts*1000, final[loudest-left_edge:loudest+right_edge], label = 'final metric')
+        
+
+        #get rid of edge effects
+        if loudest < 200 or loudest > len(scores) - 201:
+            continue
+        try:
+            best_score = min(scores[loudest-left_edge:loudest+right_edge])
+        except ValueError:
+            continue
+
+        fig, axs = plt.subplots(3, 1, figsize=(14, 18))
+
+        # reduce scaled evals of frequency domain correlation
+        labels = ['background L1','background H1', 'bbh L1','bbh H1', 'glitch L1', 'glitch H1', 'sglf L1', 'sglf H1', 'sghf L1', 'sghf H1', 'pearson', 'freq corr']
+        cols = ['purple', 'blue', 'green', 'salmon', 'goldenrod', 'brown' ]
+        for i in range(scaled_evals_.shape[1]):
+            #print(scaled_evals_.shape)
+            #print(loudest-left_edge, loudest+right_edge, i)
+            line_type = "-"
+            if i% 2 == 1:
+                line_type = "--"
+            axs[2].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i], 
+                        label = labels[i], c=cols[i//2], linestyle=line_type)
+
+        axs[2].legend()
+        axs[2].set_xlabel("Time, (ms)")
+        axs[2].set_ylabel("Final Metric Contribution")
+        best_scores.append(best_score)
+        axs[0].plot(quak_evals_ts*1000, scores[loudest-left_edge:loudest+right_edge], label = 'final metric')
         axs[0].legend()
         axs[0].set_xlabel('Time, (ms)')
         axs[0].set_ylabel('Contribution to final metric')
 
-        p = midpoints[loudest]
+        p = all_midpoints[loudest]
         left_edge, right_edge = left_edge * SEGMENT_OVERLAP, right_edge*SEGMENT_OVERLAP
         strain_ts = np.linspace(0, (right_edge+left_edge)/SAMPLE_RATE, right_edge+left_edge)
-        axs[1].plot(strain_ts*1000, strains[0, p-left_edge:p+right_edge], label = 'Hanford', alpha=0.8)
-        axs[1].plot(strain_ts*1000, strains[1, p-left_edge:p+right_edge], label = 'Livingston', alpha=0.8)
+        #print("190", strain_orig.shape, p-left_edge,p+right_edge)
+        axs[1].plot(strain_ts*1000, strain_orig[p-left_edge:p+right_edge, 0], label = 'Hanford', alpha=0.8)
+        axs[1].plot(strain_ts*1000, strain_orig[p-left_edge:p+right_edge, 1], label = 'Livingston', alpha=0.8)
         axs[1].set_xlabel('Time, (ms)')
         axs[1].set_ylabel('strain')
         axs[1].legend()
         axs[1].set_title(f'strain index: {p}, gps time: {p/SAMPLE_RATE:.3f} + {start_point}')
+        gps_times.append(p/SAMPLE_RATE + start_point)
 
 
 
-        plt.savefig(f'{savedir}/{start_point}/graphs_{j}_{p/SAMPLE_RATE:.3f}.png', dpi=300)
+        plt.savefig(f'{savedir}/{start_point}/{start_point+p/SAMPLE_RATE:.3f}_{best_score:.2f}_{extra}.png', dpi=300)
         plt.close()
-    gps_times = []
-    for j in range(len(midpoint_clusters)):
-        loudest = eval_locations[j]
-        p = midpoints[loudest]
-        gps_times.append(p/4096 + int(start_point))
-    gps_times = np.array(gps_times)
 
-    #compile the desired info
-    analysis_results = np.zeros((len(midpoint_clusters), 7))
-    #peak GPS, start GPS, end GPS, characteristic_frequency, lower_frequency, upper_frequency, ranking_statistic_value, false_alarm_rate
-    print('midpoint clusters', midpoint_clusters)
-    for j in range(len(midpoint_clusters)):
-        loudest = eval_locations[j]
-        #p = midpoints[loudest]
-        print('152', np.where(midpoints == midpoint_clusters[j]))
-        loc = np.where(midpoints == midpoint_clusters[j])[0][0]
+    # save data file with detections in the folder
+    np.save(f'{savedir}/{start_point}/gps_times.npy', np.array(gps_times))
+    np.save(f'{savedir}/{start_point}/best_scores.npy', np.array(best_scores))
 
+def parse_gwtc_catalog(path, mingps=None, maxgps=None):
+    gwtc = np.loadtxt(path, delimiter=",", dtype="str")
+    
 
+    pulled_data = np.zeros((gwtc.shape[0]-1, 3))
+    for i, elem in enumerate(gwtc[1:]): #first row is just data value description
+        pulled_data[i] = [float(elem[4]), float(elem[13]), float(elem[34])]
 
-        search_window = int(2.5 * SAMPLE_RATE/SEGMENT_OVERLAP) # 2.5 seconds to the left, 5 seconds to the right (since 'loudest' is more or less the start time)
-        search_space = np.arange(loc-search_window, loc+2*search_window, SEGMENT_OVERLAP)
-        #search_space = midpoints[loudest-search_window:loudest+2*search_window]
-        start = None
-        lowest_midp = None
-        lowest_val = 0
-        end = None
-        #assert final[midpoints[loudest]
-        print(search_space)
-        print(search_space[0], search_space[-1])
-        for s in search_space:
-            #print(np.where(midpoints==x))
-            #s = np.where(midpoints==x)[0][0] #convert to an index for final array
+    if mingps != None:
+        assert maxgps != None
+        pulled_data = pulled_data[np.logical_and(pulled_data[:, 0]<maxgps, pulled_data[:, 0]>mingps)]
+    return pulled_data
 
-            if s >= 0 and s < len(final) and final[s] < final_metric_bar: # also make sure that the considered window has not extended outside the segment
-                #valid point for consideration
-                if start == None:
-                    start = midpoints[s]
-
-                if final[s] < lowest_val:
-                    lowest_val = final[s]
-                    lowest_midp = midpoints[s]
-
-                end = midpoints[s]
-
-        print('start, lowest_val, lowest, end', start, lowest_val, lowest_midp, end)
-
-        if lowest_midp != None:
-
-            analysis_results[j, 0] = lowest_midp/4096 + int(start_point)
-            analysis_results[j, 1] = start/4096 + int(start_point)
-            analysis_results[j, 2] = end/4096 + int(start_point)
-
-            analysis_results[j, 6] = lowest_val
-
-    np.save(f'{savedir}/{start_point}/gps_times.npy', gps_times)
-    np.savetxt(f'{savedir}/{start_point}/analysis_results_{start_point}_{end_point}.txt', analysis_results)
-
-
+def find_segment(gps, segs):
+    for seg in segs:
+        a, b = seg
+        if a < gps and b > gps:
+            return seg
+        
 def main(args):
+    trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
 
-    savedir = 'output/O3b/'
+    savedir = 'output/NAME/'
+    savedir = None
+    A, B = None, None # start and stop of gps time
 
-    whiten_bandpass_resample('1256663958', '1256665000', savedir)
+    #fill it in (or alternative data loading)
+    assert A is not None and B is not None and savedir is not None
 
+    data = whiten_bandpass_resample(A, B, savedir, shift=None)
+    # data is [strain_H1, strain_L1], where each is downsampled, whitened, and bandpassed
+    get_evals(data, trained_path, savedir, int(A))
+
+def IGNORE_main(args):
+
+    gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv", 
+                        1238166018, 1253977218)
+
+    valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
+    trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
+    #trained_path = "/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/"
+    savedir = 'output/O3b_GW_focus_find_BBH/'
+
+    segments_to_analyze = []
+    SNRs = []
+    gw_event_times = []
+    for i, gps_time in enumerate(gwtc_events[:, 0]):
+        out = find_segment(gps_time, valid_segments)
+        if out is not None:
+            a, b = out
+            if b-a > 3600:
+                # want exactly 1 hour of data for consistent whitening
+                low = max(gps_time-1800, a)
+                upper = 0
+                if low == a:
+                    upper += 1800-(gps_time-a)
+                high = min(gps_time+1800+upper, b)
+
+                segments_to_analyze.append([low, high])
+                SNRs.append(gwtc_events[i, 1])
+                gw_event_times.append(gps_time)
+
+    if 0:
+        A, B = None,  None
+        target = 1249852257.0
+        target = 1245955943.1
+        target = 1249852257.0	
+        target = 1242459857.4	
+        low, high = valid_segments[0][0], valid_segments[-1][1]
+        #print(target-low, high-target)
+        for seg in valid_segments:
+            a, b = seg
+            if a < target and b>target:
+                A = str(a); B = str(b)
+                break
+        #print(A, B)
+        B = target + 100
+        A = target - 1050
+        print("A, B", A, B)
+        #reduce
+        #assert 0
+        
+        data = whiten_bandpass_resample(A, B, savedir)
+        get_evals(data, trained_path, savedir, int(A))
+    
+    if 0:
+        for seg in valid_segments:
+            a, b = seg
+            A, B = str(a), str(b)
+            if b-a > 500:
+                data = whiten_bandpass_resample(A, B, savedir)
+                get_evals(data, trained_path, savedir, int(A))
+
+    if 1:
+        for i, (a, b) in enumerate(segments_to_analyze):
+            a, b = int(a), int(b)
+            A, B = str(a), str(b)
+            data = whiten_bandpass_resample(A, B, savedir, shift=None)
+            get_evals(data, trained_path, savedir, int(A), extra=f"{gw_event_times[i]}_SNR{SNRs[i]}")
+
+    if 0:
+        _STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
+        _STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
+        _STRAIN_START = 1242442967-1800
+        _STRAIN_STOP = 1242442967 + 1800
+        a, b = _STRAIN_START, _STRAIN_STOP
+        A, B = str(a), str(b)
+        data = whiten_bandpass_resample(A, B, savedir, shift=None)
+        get_evals(data, trained_path, savedir, int(A))
+
+
+
+
+    #data = whiten_bandpass_resample('1256663958', '1256665000', savedir)
+    #get_evals(data, trained_path, savedir, 1256663958)
     # segments = np.load(args.valid_segments)
     # for valid_segment in segments:
 
