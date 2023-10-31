@@ -58,22 +58,15 @@ def extract_chunks(time_series, important_points, window_size=2048):
 
 def main(args):
 
-<<<<<<< HEAD
-    #device_str = 'cpu' # f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
-    device_str = f'cuda:{args.gpu}'
-    DEVICE = torch.device(device_str)
-
-=======
     #device_str = 'cpu' 
     device_str = f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
     
->>>>>>> 43b70412a3c08303a1261b5e0a03de7df68f06b7
     gwak_models = load_gwak_models(args.model_path, DEVICE)
     startTime_2 = time.time()
-    
+
     data = np.load(args.data_path[0])
     data = torch.from_numpy(data).to(DEVICE)
-  
+
     ##### timing eval
     print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
 
@@ -127,8 +120,8 @@ def main(args):
         if timeslide_num==1: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
         startTime_02 = time.time()
 
-        save_full_timeslide_readout = True
-        if save_full_timeslide_readout: 
+         save_full_timeslide_readout = True
+         if save_full_timeslide_readout: 
             FAR_2days = -1.617 #lowest FAR bin we want to worry about
 
             #load models
@@ -136,7 +129,7 @@ def main(args):
             fm_model_path = (f"/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
             fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
             fm_model.load_state_dict(torch.load(
-                fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
+                fm_model_path, map_location=device_str))#map_location=f'cuda:{args.gpu}'))
 
             #extract weights and bias
             linear_weights = fm_model.layer.weight.detach().cpu().numpy()
@@ -158,9 +151,9 @@ def main(args):
                 scaled_evals.append(scaled_eval[0, :])
 
                 # evaluate final metric (model carries bias)
-                #elem = torch.from_numpy(elem).to(DEVICE)
-                #scores.append(fm_model(elem).detach().cpu().numpy())
-                scores.append(np.sum(scaled_eval) + bias_value) #quicker to not load gpu
+                elem = torch.from_numpy(elem).to(DEVICE)
+                scores.append(fm_model(elem).detach().cpu().numpy())
+                #scores.append(np.sum(scaled_eval) + bias_value) #quicker to not load gpu
 
 
             scores = np.array(scores)
@@ -178,7 +171,7 @@ def main(args):
             # score = (n_windows, 1) -> (n_windows, 1)
             # scaled_evals = (n_windows, 16) -> (n_windows, 16)
 
-            indices = np.where(scores < FAR_2days)[0]   
+            indices = np.where(scores < FAR_2days)[0]
             filtered_final_score = scores[indices]
             filtered_final_scaled_evals = scaled_evals[indices]
             timeslide = timeslide.detach().cpu().numpy()
@@ -197,9 +190,10 @@ def main(args):
                                             metric_score = filtered_final_score,
                                             timeslide_data = important_timeslide,
                                             time_event_ocurred = midpoints[indices])
-            print(f"Eric's stuff, {time.time()-startTime_02:.2f} sec")
+                    
         # save as a numpy file, with the index of timeslide_num
         np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
+        if timeslide_num==1: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
 
         ##### timing eval
         if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')

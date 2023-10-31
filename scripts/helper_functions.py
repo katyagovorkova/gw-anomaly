@@ -174,7 +174,7 @@ def stack_dict_into_numpy_segments(data_dict):
     return stacked_np
 
 
-def load_gwak_models(model_path, device):
+def load_gwak_models(model_path, device, device_name):
     loaded_models = {}
     for dpath in model_path:
         model_name = dpath.split("/")[-1].split(".")[0]
@@ -187,7 +187,7 @@ def load_gwak_models(model_path, device):
                         num_timesteps=SEG_NUM_TIMESTEPS,
                         BOTTLENECK=BOTTLENECK[model_name]).to(device)
 
-        model.load_state_dict(torch.load(dpath, map_location=GPU_NAME))
+        model.load_state_dict(torch.load(dpath, map_location=device_name))
         loaded_models[dpath] = model
 
     return loaded_models 
