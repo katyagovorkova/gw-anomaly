@@ -104,8 +104,8 @@ def main(args):
         startTime_01 = time.time()
 
 
-        final_values = full_evaluation(
-            timeslide[None, :, :], args.model_path, DEVICE, loaded_models=gwak_models)
+        final_values, midpoints = full_evaluation(
+                timeslide[None, :, :], args.model_folder_path, DEVICE, return_midpoints=True)
         # print(final_values.shape)
         # print('saving, individually')
         means, stds = torch.mean(
