@@ -30,10 +30,11 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None):
         loss['freq_loss'] = dict()
 
     for dpath in model_path:
+        #coherent_loss = False
+        #if dpath.split("/")[-1] in ['bbh.pt', 'sglf.pt', 'sghf.pt']:
+        #    coherent_loss = True
         if loaded_models is None:
-            coherent_loss = False
-            if dpath.split("/")[-1] in ['bbh.pt', 'sglf.pt', 'sghf.pt']:
-                coherent_loss = True
+            
 
             model_name = dpath.split("/")[-1].split(".")[0]
             if MODEL[model_name] == "lstm":
@@ -49,12 +50,12 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None):
         else:
             model = loaded_models[dpath]
         if reduce_loss:
-            if coherent_loss:
-                loss[os.path.basename(dpath)[:-3]] = \
-                    freq_loss_torch(data, model(data).detach())
-            elif not coherent_loss:
-                loss[os.path.basename(dpath)[:-3]] = \
-                    freq_loss_torch(data, model(data).detach())
+            #if coherent_loss:
+            loss[os.path.basename(dpath)[:-3]] = \
+                freq_loss_torch(data, model(data).detach())
+            #elif not coherent_loss:
+            #    loss[os.path.basename(dpath)[:-3]] = \
+            #        freq_loss_torch(data, model(data).detach())
         elif not reduce_loss:
             if coherent_loss:
                 loss['loss'][os.path.basename(dpath)[:-3]] = \

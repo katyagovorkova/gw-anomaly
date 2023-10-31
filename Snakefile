@@ -125,7 +125,7 @@ rule generate_timeslides_for_far:
             '/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
             dataclass=modelclasses),
     params:
-        data_path = f'output/{VERSION}/1238166018_1243382418/1238166689_1238170289.npy',
+        data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/1238166018_1243382418/1238166689_1238170289.npy',
     output:
         save_evals_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/evals/'),
         save_normalizations_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/normalization/')

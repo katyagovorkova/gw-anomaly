@@ -55,8 +55,8 @@ def extract_chunks(time_series, important_points, window_size=2048):
 
 def main(args):
 
-    device_str = 'cpu' # f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
-
+    device_str = f'cuda:{args.gpu}' #if type(args.gpu)==int else args.gpu
+    #device_str = 'cpu' # 
     DEVICE = torch.device(device_str)
 
     #args.model_path, DEVICE
