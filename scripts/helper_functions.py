@@ -12,6 +12,8 @@ from lalinference import BurstSineGaussian, BurstSineGaussianF
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+from models import LSTM_AE_SPLIT, FAT
+
 from config import (
     IFOS,
     SAMPLE_RATE,
@@ -35,7 +37,9 @@ from config import (
     CHANNEL,
     NUM_IFOS,
     RETURN_INDIV_LOSSES,
-    SCALE)
+    SCALE,
+    MODEL,
+    BOTTLENECK)
 
 
 def mae(a, b):
@@ -168,6 +172,25 @@ def stack_dict_into_numpy_segments(data_dict):
         stacked_np[:, stack_index] = data_dict[class_name]
 
     return stacked_np
+
+
+def load_gwak_models(model_path, device):
+    loaded_models = {}
+    for dpath in model_path:
+        model_name = dpath.split("/")[-1].split(".")[0]
+        if MODEL[model_name] == "lstm":
+            model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+                                num_timesteps=SEG_NUM_TIMESTEPS,
+                                BOTTLENECK=BOTTLENECK[model_name]).to(device)
+        elif MODEL[model_name] == "dense":
+            model = FAT(num_ifos=NUM_IFOS,
+                        num_timesteps=SEG_NUM_TIMESTEPS,
+                        BOTTLENECK=BOTTLENECK[model_name]).to(device)
+
+        model.load_state_dict(torch.load(dpath, map_location=GPU_NAME))
+        loaded_models[dpath] = model
+
+    return loaded_models 
 
 
 def reduce_to_significance(data):

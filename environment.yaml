@@ -1,4 +1,4 @@
-name: quak
+name: gwak
 channels:
   - conda-forge
 dependencies:

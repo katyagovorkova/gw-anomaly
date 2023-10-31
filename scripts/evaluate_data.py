@@ -24,7 +24,7 @@ from config import (
 )
 
 
-def full_evaluation(data, model_folder_path, device, return_midpoints=False):
+def full_evaluation(data, model_folder_path, device, return_midpoints=False, loaded_models=None):
     '''
     Passed in data is of shape (N_samples, 2, time_axis)
     '''
@@ -50,7 +50,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False):
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
     quak_predictions_dict = quak_eval(
-        segments_normalized, model_folder_path, device)
+        segments_normalized, model_folder_path, device, loadd_models=loaded_models)
     quak_predictions = stack_dict_into_tensor(
         quak_predictions_dict, device=device)
 

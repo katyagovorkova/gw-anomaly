@@ -18,7 +18,7 @@ from config import (NUM_IFOS,
                     RECREATION_LIMIT)
 
 
-def quak_eval(data, model_path, device, reduce_loss=True):
+def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None):
     # data required to be torch tensor at this point
 
     # check if the evaluation has to be done for one model or for several
@@ -30,21 +30,24 @@ def quak_eval(data, model_path, device, reduce_loss=True):
         loss['freq_loss'] = dict()
 
     for dpath in model_path:
-        coherent_loss = False
-        if dpath.split("/")[-1] in ['bbh.pt', 'sglf.pt', 'sghf.pt']:
-            coherent_loss = True
+        if loaded_models is None:
+            coherent_loss = False
+            if dpath.split("/")[-1] in ['bbh.pt', 'sglf.pt', 'sghf.pt']:
+                coherent_loss = True
 
-        model_name = dpath.split("/")[-1].split(".")[0]
-        if MODEL[model_name] == "lstm":
-            model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
-                                  num_timesteps=SEG_NUM_TIMESTEPS,
-                                  BOTTLENECK=BOTTLENECK[model_name]).to(device)
-        elif MODEL[model_name] == "dense":
-            model = FAT(num_ifos=NUM_IFOS,
-                        num_timesteps=SEG_NUM_TIMESTEPS,
-                        BOTTLENECK=BOTTLENECK[model_name]).to(device)
+            model_name = dpath.split("/")[-1].split(".")[0]
+            if MODEL[model_name] == "lstm":
+                model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+                                    num_timesteps=SEG_NUM_TIMESTEPS,
+                                    BOTTLENECK=BOTTLENECK[model_name]).to(device)
+            elif MODEL[model_name] == "dense":
+                model = FAT(num_ifos=NUM_IFOS,
+                            num_timesteps=SEG_NUM_TIMESTEPS,
+                            BOTTLENECK=BOTTLENECK[model_name]).to(device)
 
-        model.load_state_dict(torch.load(dpath, map_location=GPU_NAME))
+            model.load_state_dict(torch.load(dpath, map_location=GPU_NAME))
+        else:
+            model = loaded_models[dpath]
         if reduce_loss:
             if coherent_loss:
                 loss[os.path.basename(dpath)[:-3]] = \
