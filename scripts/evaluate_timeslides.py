@@ -15,6 +15,7 @@ from evaluate_data import full_evaluation
 from helper_functions import load_gwak_models
 import sys
 import time
+from torch.nn.functional import conv1d
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -59,14 +60,23 @@ def extract_chunks(time_series, important_points, window_size=2048):
 def main(args):
 
     #device_str = 'cpu' 
-    device_str = f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
-    
-    gwak_models = load_gwak_models(args.model_path, DEVICE)
+    device_str = f'cuda:{args.gpu}'# if type(args.gpu)==int else args.gpu
+    DEVICE = torch.device(device_str)
+    gwak_models = load_gwak_models(args.model_path, DEVICE, device_str)
     startTime_2 = time.time()
+
+    kernel_len = 50
+    kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
+    kernel = kernel[None, :, :]
 
     data = np.load(args.data_path[0])
     data = torch.from_numpy(data).to(DEVICE)
+    factors_used_for_fm = np.linspace(0, 20, 21)
+    for elem in FACTORS_NOT_USED_FOR_FM:
+        #factors_used_for_fm.delete(elem)
+        factors_used_for_fm[elem] = -1
 
+    factors_used_for_fm = factors_used_for_fm[factors_used_for_fm>=0]
     ##### timing eval
     print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
 
@@ -108,20 +118,21 @@ def main(args):
 
 
         final_values, midpoints = full_evaluation(
-                timeslide[None, :, :], args.model_path, DEVICE, return_midpoints=True)
+                timeslide[None, :, :], args.model_path, DEVICE, return_midpoints=True, loaded_models=gwak_models)
         # print(final_values.shape)
         # print('saving, individually')
         means, stds = torch.mean(
             final_values, axis=-2), torch.std(final_values, axis=-2)
         means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
         np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
-        final_values = final_values.detach().cpu().numpy()
+        final_values = final_values.detach()#.cpu().numpy()
+        final_values = final_values[0] #get ready of batch dimension 1
 
         if timeslide_num==1: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
         startTime_02 = time.time()
 
-         save_full_timeslide_readout = True
-         if save_full_timeslide_readout: 
+        save_full_timeslide_readout = True
+        if save_full_timeslide_readout: 
             FAR_2days = -1.617 #lowest FAR bin we want to worry about
 
             #load models
@@ -132,44 +143,55 @@ def main(args):
                 fm_model_path, map_location=device_str))#map_location=f'cuda:{args.gpu}'))
 
             #extract weights and bias
-            linear_weights = fm_model.layer.weight.detach().cpu().numpy()
-            bias_value = fm_model.layer.bias.detach().cpu().numpy()
+            linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
+            bias_value = fm_model.layer.bias#.detach().cpu().numpy()
 
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             scores = []
-            scaled_evals = []
-            for elem in final_values[0]:
+            #scaled_evals = []
+            #print(final_values.shape)
 
-                # delete factors not used for FM
-                elem = np.delete(elem, FACTORS_NOT_USED_FOR_FM, -1)
+            #for elem in final_values[0]:
 
-                # normalize
-                elem = (elem - norm_factors[0]) / norm_factors[1]
+            # delete factors not used for FM
+            #print(FACTORS_NOT_USED_FOR_FM)
+            #assert 0
+            final_values_slx = final_values[:, factors_used_for_fm]
+            #print("155", final_values_slx.shape)
+            #elem = np.delete(elem, FACTORS_NOT_USED_FOR_FM, -1)
 
-                # multiply by weights (NOT SUMMED)
-                scaled_eval = np.multiply(elem, linear_weights)
-                scaled_evals.append(scaled_eval[0, :])
+            # normalize
+            #elem = (elem - norm_factors[0]) / norm_factors[1]
+            mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)
+            std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)
 
-                # evaluate final metric (model carries bias)
-                elem = torch.from_numpy(elem).to(DEVICE)
-                scores.append(fm_model(elem).detach().cpu().numpy())
-                #scores.append(np.sum(scaled_eval) + bias_value) #quicker to not load gpu
+            final_values_slx = (final_values_slx -mean_norm)/std_norm
+            
+            # multiply by weights (NOT SUMMED)
+            #print(final_values_slx.shape, linear_weights.shape) 
+            scaled_evals = torch.multiply(final_values_slx, linear_weights)#[0, :]
+            #print(scaled_evals.shape)
+            #assert 0
+            # evaluate final metric (model carries bias)
+            scores = (fm_model(final_values_slx).detach())
 
-
-            scores = np.array(scores)
-            scaled_evals = np.array(scaled_evals)
-
-            # do smoothing on the scores
-            kernel_len = 50
-            kernel = np.ones(kernel_len)/kernel_len
-            #kernel_evals = np.ones((kernel_len, scaled_evals[0].shape[1]))/kernel_len
-            bottom_trim = kernel_len * 5
-            top_trim = - bottom_trim
-            scores = np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=scores)
-            scaled_evals = np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=scaled_evals)
+            if 0:
+                # do smoothing on the scores
+                kernel_len = 50
+                kernel = np.ones(kernel_len)/kernel_len
+                #kernel_evals = np.ones((kernel_len, scaled_evals[0].shape[1]))/kernel_len
+                bottom_trim = kernel_len * 5
+                top_trim = - bottom_trim
+                scores = np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=scores)
+                scaled_evals = np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=scaled_evals)
+            if 1:
+                scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :], kernel, padding = "same").transpose(0, 1)[0].transpose(0, 1)
+                smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :], kernel, padding = "same").transpose(0, 1)[0].transpose(0, 1)
 
             # score = (n_windows, 1) -> (n_windows, 1)
             # scaled_evals = (n_windows, 16) -> (n_windows, 16)
+            scaled_evals = scaled_evals.detach().cpu().numpy()
+            scores = smoothed_scores.detach().cpu().numpy()
 
             indices = np.where(scores < FAR_2days)[0]
             filtered_final_score = scores[indices]
@@ -192,8 +214,8 @@ def main(args):
                                             time_event_ocurred = midpoints[indices])
                     
         # save as a numpy file, with the index of timeslide_num
-        np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
-        if timeslide_num==1: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
+        np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
+        if timeslide_num>0: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
 
         ##### timing eval
         if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')

@@ -50,7 +50,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
     quak_predictions_dict = quak_eval(
-        segments_normalized, model_folder_path, device, load_models=loaded_models)
+        segments_normalized, model_folder_path, device, loaded_models=loaded_models)
     quak_predictions = stack_dict_into_tensor(  
         quak_predictions_dict, device=device)
 
