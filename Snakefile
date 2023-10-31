@@ -58,6 +58,19 @@ rule fetch_site_data:
         'python3 scripts/fetch_data.py {input.omicron} {input.intersections}\
             --site {wildcards.site}'
 
+rule fetch_timeslide_data:
+    """
+    # 1238166018 -- 1 april 2019
+    # 1243382418 -- 1 june 2019
+    # 1248652818 -- 1 august 2019
+    # 1253977218 -- 1 oct 2019
+    """
+    params:
+        start = 1248652818,
+        stop = 1253977218
+    shell:
+        'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
+
 rule generate_data:
     input:
         omicron = 'output/omicron/',
