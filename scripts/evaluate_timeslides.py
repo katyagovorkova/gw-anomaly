@@ -109,7 +109,7 @@ def main(args):
 
 
         final_values, midpoints = full_evaluation(
-                timeslide[None, :, :], args.model_folder_path, DEVICE, return_midpoints=True)
+                timeslide[None, :, :], args.model_path, DEVICE, return_midpoints=True)
         # print(final_values.shape)
         # print('saving, individually')
         means, stds = torch.mean(
@@ -191,12 +191,12 @@ def main(args):
                                             metric_score = filtered_final_score,
                                             timeslide_data = important_timeslide,
                                             time_event_ocurred = midpoints[indices])
-                    
+            print(f"Eric's stuff, {time.time()-startTime_02:.2f} sec")
         # save as a numpy file, with the index of timeslide_num
         np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
 
         ##### timing eval
-        if timeslide_num==1: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
+        if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
 
     print(f'Time to eval all {n_timeslides} timeslides: {(time.time() - startTime_1):.2f} sec')
 
