@@ -12,6 +12,7 @@ import torch.nn as nn
 
 from models import LinearModel
 from evaluate_data import full_evaluation
+from helper_functions import load_gwak_models
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
@@ -57,6 +58,9 @@ def main(args):
     device_str = 'cpu' # f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
 
     DEVICE = torch.device(device_str)
+
+    #args.model_path, DEVICE
+    gwak_models = load_gwak_models(args.model_path, DEVICE)
 
     ##### timing
     startTime_2 = time.time()
@@ -105,7 +109,7 @@ def main(args):
 
 
         final_values = full_evaluation(
-            timeslide[None, :, :], args.model_path, DEVICE)
+            timeslide[None, :, :], args.model_path, DEVICE, loaded_models=gwak_models)
         # print(final_values.shape)
         # print('saving, individually')
         means, stds = torch.mean(
