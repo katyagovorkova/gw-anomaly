@@ -58,10 +58,16 @@ def extract_chunks(time_series, important_points, window_size=2048):
 
 def main(args):
 
+<<<<<<< HEAD
     #device_str = 'cpu' # f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
     device_str = f'cuda:{args.gpu}'
     DEVICE = torch.device(device_str)
 
+=======
+    #device_str = 'cpu' 
+    device_str = f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
+    
+>>>>>>> 43b70412a3c08303a1261b5e0a03de7df68f06b7
     gwak_models = load_gwak_models(args.model_path, DEVICE)
     startTime_2 = time.time()
     
