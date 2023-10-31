@@ -8,6 +8,8 @@ import torch.nn as nn
 from models import LinearModel
 from evaluate_data import full_evaluation
 import sys
+import time
+
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
@@ -26,8 +28,8 @@ from config import (
 
 def main(args):
 
-    DEVICE = torch.device(f'cuda:{args.gpu}')
-
+    #DEVICE = torch.device(f'cuda:{args.gpu}')
+    DEVICE = torch.device(GPU_NAME)
     if args.metric_coefs_path is not None:
         # initialize histogram
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
@@ -134,6 +136,8 @@ def main(args):
                 update_hist_cpu(all_vals)
 
     else:
+        
+
 
         data = np.load(args.data_path[0])['data']
         data = torch.from_numpy(data).to(DEVICE)
@@ -172,6 +176,7 @@ def main(args):
             return chunks
 
         for timeslide_num in range(1, n_timeslides + 1):
+            start_time = time.time()
             print(f'starting timeslide: {timeslide_num}/{n_timeslides}')
 
             indicies_to_slide = np.random.uniform(
@@ -278,6 +283,12 @@ def main(args):
 
             # save as a numpy file, with the index of timeslide_num
             np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
+            # Place your code snippet here
+            # ...
+
+            end_time = time.time()
+            elapsed_time = end_time - start_time
+            print(f"The code took {elapsed_time} seconds to run.")
 
 
 if __name__ == '__main__':
