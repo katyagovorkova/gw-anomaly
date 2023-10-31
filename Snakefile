@@ -120,27 +120,22 @@ rule train_quak:
         'python3 scripts/train_quak.py {params.data} {params.model_file} {params.savedir} '
 
 rule generate_timeslides_for_far:
+    input:
+        model_path = expand(
+            '/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+            dataclass=modelclasses),
     params:
-        data_path = expand(rules.upload_data.output,
-            dataclass='timeslides',
-            version='{version}'),
-        model_path = expand(rules.train_quak.params.model_file,
-            dataclass=modelclasses,
-            version='{version}'),
-        shorten_timeslides = False,
-        save_path = 'output/{version}/timeslides_{id}/',
-    # output:
-        save_evals_path = 'output/{version}/timeslides_{id}/evals/',
-        save_normalizations_path = 'output/{version}/timeslides_{id}/normalization/'
+        data_path = f'output/{VERSION}/1238166018_1243382418/1238166689_1238170289.npy',
+    output:
+        save_evals_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/evals/'),
+        save_normalizations_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/normalization/')
     shell:
-        'mkdir -p {params.save_path}; '
-        'mkdir -p {params.save_evals_path}; '
-        'mkdir -p {params.save_normalizations_path}; '
-        'python3 scripts/evaluate_timeslides.py {params.save_path} {params.model_path} \
+        'mkdir -p {output.save_evals_path}; '
+        'mkdir -p {output.save_normalizations_path}; '
+        'python3 scripts/evaluate_timeslides.py {input.model_path}\
             --data-path {params.data_path} \
-            --save-evals-path {params.save_evals_path} \
-            --save-normalizations-path {params.save_normalizations_path} \
-            --fm-shortened-timeslides {params.shorten_timeslides} \
+            --save-evals-path {output.save_evals_path} \
+            --save-normalizations-path {output.save_normalizations_path} \
             --gpu {wildcards.id}'
 
 rule evaluate_signals:
@@ -173,7 +168,7 @@ rule generate_timeslides_for_fm:
         'mkdir -p {params.save_path}; '
         'mkdir -p {params.save_evals_path}; '
         'mkdir -p {params.save_normalizations_path}; '
-        'python3 scripts/evaluate_timeslides.py {params.save_path} {params.model_path} \
+        'python3 scripts/compute_far.py {params.save_path} {params.model_path} \
             --data-path {params.data_path} \
             --save-evals-path {params.save_evals_path} \
             --save-normalizations-path {params.save_normalizations_path} \
@@ -219,7 +214,7 @@ rule compute_far:
         metric_coefs_path = rules.train_final_metric.params.params_file,
         norm_factors_path = rules.train_final_metric.params.norm_factor_file,
         fm_model_path = rules.train_final_metric.params.fm_model_path,
-        data_path = expand(rules.generate_timeslides_for_far.params.save_evals_path,
+        data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
             id='{far_id}',
             version='O3av2'),
     params:
@@ -230,7 +225,7 @@ rule compute_far:
     output:
         save_path = 'output/{version}/far_bins_{far_id}.npy'
     shell:
-        'python3 scripts/evaluate_timeslides.py {output.save_path} {params.model_path} \
+        'python3 scripts/compute_far.py {output.save_path} {params.model_path} \
             --data-path {input.data_path} \
             --fm-model-path {input.fm_model_path} \
             --metric-coefs-path {input.metric_coefs_path} \
