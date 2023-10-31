@@ -59,6 +59,7 @@ def main(args):
 
     #device_str = 'cpu' 
     device_str = f'cuda:{args.gpu}' if type(args.gpu)==int else args.gpu
+    DEVICE = torch.device(device_str)
     
     gwak_models = load_gwak_models(args.model_path, DEVICE)
     startTime_2 = time.time()
@@ -150,9 +151,9 @@ def main(args):
                 scaled_evals.append(scaled_eval[0, :])
 
                 # evaluate final metric (model carries bias)
-                #elem = torch.from_numpy(elem).to(DEVICE)
-                #scores.append(fm_model(elem).detach().cpu().numpy())
-                scores.append(np.sum(scaled_eval) + bias_value) #quicker to not load gpu
+                elem = torch.from_numpy(elem).to(DEVICE)
+                scores.append(fm_model(elem).detach().cpu().numpy())
+                #scores.append(np.sum(scaled_eval) + bias_value) #quicker to not load gpu
 
 
             scores = np.array(scores)
