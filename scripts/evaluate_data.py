@@ -2,6 +2,7 @@ import os
 import argparse
 import numpy as np
 import torch
+import time
 
 from quak_predict import quak_eval
 from helper_functions import (
@@ -36,7 +37,9 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
     data = data[:, :, :clipped_time_axis]
 
+    ty = time.time()
     segments = split_into_segments_torch(data, device=device)
+    
     slice_midpoints = np.arange(SEG_NUM_TIMESTEPS // 2, segments.shape[1] * (
         SEGMENT_OVERLAP) + SEG_NUM_TIMESTEPS // 2, SEGMENT_OVERLAP)
 
@@ -60,7 +63,6 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     else:
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
-
     pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
 
     pearson_values = pearson_values[:, :, None]
