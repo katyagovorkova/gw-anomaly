@@ -34,7 +34,6 @@ from config import (
 # print(f'Time to import modules: {(time.time() - startTime_1):.2f} sec')
 
 ##### timing eval
-print(f'Time to import modules: {(time.time() - startTime_1):.2f} sec')
 
 def extract_chunks(time_series, important_points, device, window_size=2048):
     # Determine the dimensions of the output array
