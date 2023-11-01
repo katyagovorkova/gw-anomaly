@@ -27,14 +27,40 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
     SMOOTHING_KERNEL_SIZES,
     DO_SMOOTHING,
-    GPU_NAME
+    GPU_NAME,
+    SEGMENT_OVERLAP
     )
 
 # ##### timing eval
 # print(f'Time to import modules: {(time.time() - startTime_1):.2f} sec')
 
-##### timing eval
+def event_clustering(indices, scores, spacing, device):
+    clustered = []
+    idxs = indices.detach().cpu().numpy()
+    cluster = []
+    for i, elem in enumerate(idxs):
+        # to move onto next cluster
+        if i != 0:
+            dist = elem - idxs[i-1]
+            if dist > spacing:
+                #make a new cluster
+                clustered.append(cluster)
+                cluster = [] # and initiate a new one
+        cluster.append(elem)
+    clustered.append(cluster) # last one isn't captured, since we haven't moved on
+    final_points = []
+    for cluster in clustered:
+        # take the one with the lowest score (most significant)
+        bestscore = 10
+        bestval = None
+        for elem in cluster:
+            if scores[elem] < bestscore:
+                bestscore = scores[elem]
+                bestval = elem
+        final_points.append(bestval)
+    return torch.from_numpy(np.array(final_points)).int().to(device)
 
+##### timing eval
 def extract_chunks(time_series, important_points, device, window_size=2048):
     # Determine the dimensions of the output array
     n_chunks = len(important_points)
@@ -42,7 +68,7 @@ def extract_chunks(time_series, important_points, device, window_size=2048):
 
     # Initialize an empty array to store the chunks
     chunks = np.zeros((2, n_chunks, chunk_length))
-    for idx, point in enumerate(important_points):
+    for idx, point in enumerate(important_points):  
         # Define the start and end points for extraction
         start = max(0, point - window_size)
         end = min(time_series.shape[1], point + window_size + 1)
@@ -98,7 +124,7 @@ def main(args):
     ##### timing eval
     # print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
 
-    reduction = 8  # for things to fit into memory nicely
+    reduction = 10  # for things to fit into memory nicely
 
     sample_length = data.shape[1] / SAMPLE_RATE
     n_timeslides = int(args.timeslide_total_duration //
@@ -108,9 +134,7 @@ def main(args):
     print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
     print('Number of timeslides:', n_timeslides)
 
-    #indices = torch.zeros([367545]).to(DEVICE)
-    
-    startTime_1 = time.time()
+
     timeslide = torch.empty(data.shape, device=DEVICE)
     reduced_len = int(data.shape[1] / reduction)
     reduced_len = (reduced_len // 1000) * 1000
@@ -141,13 +165,13 @@ def main(args):
             means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
             np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
         #if timeslide_num>0: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
-        startTime_02 = time.time()
+        #startTime_02 = time.time()
         final_values = final_values[0]
 
         save_full_timeslide_readout = True
         if save_full_timeslide_readout:
             FAR_2days = -1.617 #lowest FAR bin we want to worry about
-
+            FAR_2days = 1.0
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             final_values_slx = final_values.index_select(1, factors_used_for_fm)
             final_values_slx = (final_values_slx - mean_norm)/std_norm
@@ -158,6 +182,9 @@ def main(args):
             smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :], kernel, padding = "same").transpose(0, 1)[0].transpose(0, 1)
             
             indices = torch.where(smoothed_scores < FAR_2days)[0]
+
+            if len(indices) > 0:
+                indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
             filtered_final_score = smoothed_scores.index_select(0, indices)
             filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
@@ -169,6 +196,7 @@ def main(args):
             filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
             filtered_final_score = filtered_final_score.detach().cpu().numpy()
             if len(indices_) > 0:
+                print(len(indices_))
                 np.savez(f'{args.save_evals_path}/timeslide_evals_FULL_{timeslide_num}.npz',
                                             final_scaled_evals=filtered_final_scaled_evals,
                                             metric_score = filtered_final_score,
@@ -177,10 +205,11 @@ def main(args):
 
         # save as a numpy file, with the index of timeslide_num
         #np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
-        if timeslide_num>0: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
+        #print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
+        print(f'Time GPU {device_str}, {timeslide_num}/{n_timeslides}')
 
         ##### timing eval
-        # if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
+        #if timeslide_num>0: print(f'Time to eval, GPU {device_str}, {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
 
     # print(f'Time to eval all {n_timeslides} timeslides: {(time.time() - startTime_1):.2f} sec')
 
