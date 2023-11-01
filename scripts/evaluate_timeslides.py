@@ -134,7 +134,6 @@ def main(args):
     print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
     print('Number of timeslides:', n_timeslides)
 
-
     timeslide = torch.empty(data.shape, device=DEVICE)
     reduced_len = int(data.shape[1] / reduction)
     reduced_len = (reduced_len // 1000) * 1000
@@ -171,7 +170,6 @@ def main(args):
         save_full_timeslide_readout = True
         if save_full_timeslide_readout:
             FAR_2days = -1.617 #lowest FAR bin we want to worry about
-            FAR_2days = 1.0
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             final_values_slx = final_values.index_select(1, factors_used_for_fm)
             final_values_slx = (final_values_slx - mean_norm)/std_norm
