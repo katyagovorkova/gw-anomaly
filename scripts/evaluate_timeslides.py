@@ -1,7 +1,7 @@
 import time
 
-##### timing
-startTime_1 = time.time()
+# ##### timing
+# startTime_1 = time.time()
 
 import os
 import argparse
@@ -20,7 +20,6 @@ from torch.nn.functional import conv1d
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
-    TIMESLIDE_TOTAL_DURATION,
     SAMPLE_RATE,
     HISTOGRAM_BIN_DIVISION,
     HISTOGRAM_BIN_MIN,
@@ -31,10 +30,8 @@ from config import (
     GPU_NAME
     )
 
-TIMESLIDE_TOTAL_DURATION = 3600 # 100 * 24 * 3600
-
-##### timing eval
-print(f'Time to import modules: {(time.time() - startTime_1):.2f} sec')
+# ##### timing eval
+# print(f'Time to import modules: {(time.time() - startTime_1):.2f} sec')
 
 def extract_chunks(time_series, important_points, window_size=2048):
     # Determine the dimensions of the output array
@@ -59,17 +56,17 @@ def extract_chunks(time_series, important_points, window_size=2048):
 
 def main(args):
 
-    #device_str = 'cpu' 
-    device_str = f'cuda:{args.gpu}'# if type(args.gpu)==int else args.gpu
+    device_str = f'cuda:{args.gpu}'
     DEVICE = torch.device(device_str)
     gwak_models = load_gwak_models(args.model_path, DEVICE, device_str)
-    startTime_2 = time.time()
+
+    # startTime_2 = time.time()
 
     kernel_len = 50
     kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
     kernel = kernel[None, :, :]
 
-    data = np.load(args.data_path[0])
+    data = np.load(args.data_path)
     data = torch.from_numpy(data).to(DEVICE)
     factors_used_for_fm = np.linspace(0, 20, 21)
     for elem in FACTORS_NOT_USED_FOR_FM:
@@ -78,21 +75,21 @@ def main(args):
 
     factors_used_for_fm = factors_used_for_fm[factors_used_for_fm>=0]
     ##### timing eval
-    print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
+    # print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
 
     reduction = 10  # for things to fit into memory nicely
 
     sample_length = data.shape[1] / SAMPLE_RATE
-    n_timeslides = int(TIMESLIDE_TOTAL_DURATION //
+    n_timeslides = int(args.timeslide_total_duration //
                        sample_length) * reduction
-    print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
-    print('Number of timeslides:', n_timeslides)
+    # print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
+    # print('Number of timeslides:', n_timeslides)
 
     for timeslide_num in range(1, n_timeslides + 1):
         # print(f'starting timeslide: {timeslide_num}/{n_timeslides}')
 
-        ##### timing
-        startTime_0 = time.time()
+        # ##### timing
+        # startTime_0 = time.time()
 
         indicies_to_slide = np.random.uniform(
             SAMPLE_RATE, data.shape[1] - SAMPLE_RATE)
@@ -113,8 +110,9 @@ def main(args):
         timeslide = timeslide[:, start_point:start_point + reduced_len]
 
         timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
-        if timeslide_num==1: print(f'Time to prepare for eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_0):.2f} sec')
-        startTime_01 = time.time()
+
+        # if timeslide_num==1: print(f'Time to prepare for eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_0):.2f} sec')
+        # startTime_01 = time.time()
 
 
         final_values, midpoints = full_evaluation(
@@ -128,11 +126,11 @@ def main(args):
         final_values = final_values.detach()#.cpu().numpy()
         final_values = final_values[0] #get ready of batch dimension 1
 
-        if timeslide_num==1: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
-        startTime_02 = time.time()
+        # if timeslide_num==1: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
+        # startTime_02 = time.time()
 
         save_full_timeslide_readout = True
-        if save_full_timeslide_readout: 
+        if save_full_timeslide_readout:
             FAR_2days = -1.617 #lowest FAR bin we want to worry about
 
             #load models
@@ -166,9 +164,9 @@ def main(args):
             std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)
 
             final_values_slx = (final_values_slx -mean_norm)/std_norm
-            
+
             # multiply by weights (NOT SUMMED)
-            #print(final_values_slx.shape, linear_weights.shape) 
+            #print(final_values_slx.shape, linear_weights.shape)
             scaled_evals = torch.multiply(final_values_slx, linear_weights)#[0, :]
             #print(scaled_evals.shape)
             #assert 0
@@ -201,26 +199,21 @@ def main(args):
             #extract important timeslides with indices
             important_timeslide = extract_chunks(timeslide, midpoints[indices], window_size=1024)
 
-            #print(indices, filtered_final_score)
-            #print("timeslide shape", important_timeslide.shape)
-            #print("filtered_final_score", filtered_final_score.shape)
-            #print("scaled_evals", filtered_final_scaled_evals.shape)
-
             if len(indices) > 0:
                 np.savez(f'{args.save_evals_path}/timeslide_evals_FULL_{timeslide_num}.npz',
                                             final_scaled_evals=filtered_final_scaled_evals,
                                             metric_score = filtered_final_score,
                                             timeslide_data = important_timeslide,
                                             time_event_ocurred = midpoints[indices])
-                    
+
         # save as a numpy file, with the index of timeslide_num
         np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
-        if timeslide_num>0: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
+        # if timeslide_num>0: print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
 
         ##### timing eval
-        if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
+        # if timeslide_num>0: print(f'Time to eval {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
 
-    print(f'Time to eval all {n_timeslides} timeslides: {(time.time() - startTime_1):.2f} sec')
+    # print(f'Time to eval all {n_timeslides} timeslides: {(time.time() - startTime_1):.2f} sec')
 
 if __name__ == '__main__':
 
@@ -231,8 +224,14 @@ if __name__ == '__main__':
                         help='Path to the models')
 
     # Additional arguments
-    parser.add_argument('--data-path', type=str, nargs='+',
+    parser.add_argument('--data-path', type=str,
                         help='File containing the background to create timeslides from')
+
+    parser.add_argument('--timeslide-total-duration', type=int,
+                        help='How long of timeslides to create')
+
+    parser.add_argument('--files-to-eval', type=int, default=1,
+                        help='How many 1-hour background fiels to turn into timeslides')
 
     parser.add_argument('--gpu', type=str, default='1',
                         help='On which GPU to run')
@@ -245,4 +244,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    main(args)
+    folder_path = args.data_path
+    print(folder_path)
+    for i, filename in enumerate(os.listdir(folder_path)):
+
+        if i >= args.files_to_eval and args.files_to_eval != -1:
+            break
+
+        if filename.endswith('.npy'):
+            print(f'Running on {filename}')
+            args.data_path = os.path.join(folder_path, filename)
+            main(args)

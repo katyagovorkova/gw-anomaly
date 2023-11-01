@@ -1,4 +1,4 @@
-from config import VERSION, PERIOD
+from config import VERSION, PERIOD, TIMESLIDE_TOTAL_DURATION, TIMESLIDES_START, TIMESLIDES_STOP
 
 signalclasses = ['bbh', 'sglf', 'sghf']
 backgroundclasses = ['background', 'glitches']
@@ -37,7 +37,7 @@ rule find_valid_segments:
     script:
         'scripts/segments_intersection.py'
 
-rule run_omicron:       
+rule run_omicron:
     params:
         user_name = 'katya.govorkova',
         folder = f'output/omicron/'
@@ -125,10 +125,10 @@ rule generate_timeslides_for_far:
             '/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
             dataclass=modelclasses),
     params:
-        data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/1238166018_1243382418/1238166689_1238170289.npy',
+        data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
     output:
-        save_evals_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/evals/'),
-        save_normalizations_path = directory('output/{version}/1238166689_1238170289_timeslides_{id}/normalization/')
+        save_evals_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}/evals_{files_to_eval}_files/'),
+        save_normalizations_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}/normalization_{files_to_eval}_files/')
     shell:
         'mkdir -p {output.save_evals_path}; '
         'mkdir -p {output.save_normalizations_path}; '
@@ -136,7 +136,16 @@ rule generate_timeslides_for_far:
             --data-path {params.data_path} \
             --save-evals-path {output.save_evals_path} \
             --save-normalizations-path {output.save_normalizations_path} \
+            --files-to-eval {wildcards.files_to_eval} \
+            --timeslide-total-duration {wildcards.timeslide_total_duration} \
             --gpu {wildcards.id}'
+
+rule all_timeslides_for_far:
+    input:
+        expand(rules.generate_timeslides_for_far.output.save_evals_path,
+            id=range(4),
+            files_to_eval=1,
+            timeslide_total_duration=3600)
 
 rule evaluate_signals:
     params:
@@ -216,7 +225,9 @@ rule compute_far:
         fm_model_path = rules.train_final_metric.params.fm_model_path,
         data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
             id='{far_id}',
-            version='O3av2'),
+            version='O3av2',
+            timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
+            files_to_eval=-1),
     params:
         model_path = expand(rules.train_quak.params.model_file,
             dataclass=modelclasses,
