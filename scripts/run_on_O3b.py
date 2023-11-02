@@ -22,7 +22,7 @@ from helper_functions import far_to_metric, compute_fars
 DEVICE = torch.device(GPU_NAME)
 
 
-def clustering(x, bar=5*4096/5):
+def clustering(x, bar=5*4096/SEGMENT_OVERLAP):
 
     # 5 second spacing between events
 
@@ -78,7 +78,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     strain = np.swapaxes(strain, 1, 2) # make it (N_batches, 2, time_axis), N_batches is 1 here
 
     #break the strain into pieces along the time axis to fit into GPU memory
-    max_gpu_seconds =350 # 500 seconds at a time
+    max_gpu_seconds = 350 # 500 seconds at a time
     max_gpu_dtps = max_gpu_seconds * SAMPLE_RATE
 
     n_splits = (strain.shape[2] // max_gpu_dtps) + 1 
@@ -109,10 +109,12 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     
     fm_model_path = (f"{trained_path}/trained/fm_model.pt")
 
-    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM), override_supervised=supervised_model).to(DEVICE)
+    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
     if not supervised_model:
+        linear_weights_ = fm_model.layer.weight.detach()
+        bias_value_ = fm_model.layer.bias.detach()
         linear_weights = fm_model.layer.weight.detach().cpu().numpy()
         bias_value = fm_model.layer.bias.detach().cpu().numpy()
 
@@ -128,7 +130,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
 
     # do smoothing on the scores
-    kernel_len = 50
+    kernel_len = int(50*5/SEGMENT_OVERLAP)
     kernel = np.ones(kernel_len)/kernel_len
     #kernel_evals = np.ones((kernel_len, scaled_evals[0].shape[1]))/kernel_len
     scores_ = []
@@ -167,7 +169,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
 
     if not supervised_model:
-        far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_{kernel_len}.npy")
+        far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy")
         # set a bar at 1/2 days FAR to get elements of interest
     else:
         far_bins = np.load(f"/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/far_bins_k{kernel_len}.npy")
@@ -218,8 +220,8 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         loudest = eval_locations[j]
         #print("loudest", loudest)
 
-        left_edge = 150
-        right_edge = 225
+        left_edge = int(150 * 5 / SEGMENT_OVERLAP) 
+        right_edge = int(225 * 5 / SEGMENT_OVERLAP)
         n_points = left_edge+right_edge
         labels = ['background', 'bbh', 'glitch', 'sglf', 'sghf', 'pearson']
         quak_evals_ts = np.linspace(0, n_points*(SEGMENT_OVERLAP/SAMPLE_RATE), n_points)
@@ -416,9 +418,16 @@ def main(args):
     valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
     trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
     #trained_path = "/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/"
-    savedir = 'output/all_O3a_spectrogram/'
+    savedir = 'output/O3a_runthrough/'
 
-    far_a, far_b = make_metric_vs_far(savedir)
+    #far_a, far_b = make_metric_vs_far(savedir)
+    
+    if 1:
+        A = 1243303084
+        B = A + 3600
+        data = whiten_bandpass_resample(A, B, savedir)
+        get_evals(data, trained_path, savedir, int(A))
+             
 
 
     if 0:
@@ -444,7 +453,7 @@ def main(args):
         data = whiten_bandpass_resample(A, B, savedir)
         get_evals(data, trained_path, savedir, int(A))
     #/home/ryan.raikman/s22/forks/katya/gw-anomaly/scripts/output/all_O3a/
-    if 1:
+    if 0:
         for seg in valid_segments:
             
             a, b = seg

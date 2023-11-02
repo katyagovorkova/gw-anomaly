@@ -64,10 +64,21 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
     pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
-
+    
+    # may need to manually override this
     pearson_values = pearson_values[:, :, None]
-    quak_predictions = quak_predictions[:, edge_start:edge_end, :]
-    slice_midpoints = slice_midpoints[edge_start:edge_end]
+    if edge_end-edge_start > 0:
+        disparity = quak_predictions.shape[1] - pearson_values.shape[1]
+        edge_start = disparity//2
+        edge_end = -disparity//2
+
+    if edge_end != 0:
+        quak_predictions = quak_predictions[:, edge_start:edge_end, :]
+        slice_midpoints = slice_midpoints[edge_start:edge_end]
+    else:
+        quak_predictions = quak_predictions[:, edge_start:, :]
+        slice_midpoints = slice_midpoints[edge_start:]
+
     final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
 
     if return_midpoints:

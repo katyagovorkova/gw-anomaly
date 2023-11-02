@@ -90,9 +90,8 @@ def main(args):
     gwak_models = load_gwak_models(args.model_path, DEVICE, device_str)
 
     # startTime_2 = time.time()
-
-    #manual_pearson_values = torch.zeros(([1, 293945])).to(DEVICE)
-    kernel_len = 50
+    orig_kernel = 50
+    kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
     kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
     kernel = kernel[None, :, :]
 
@@ -118,13 +117,13 @@ def main(args):
     for elem in FACTORS_NOT_USED_FOR_FM:
         #factors_used_for_fm.delete(elem)
         factors_used_for_fm[elem] = -1
-
     factors_used_for_fm = factors_used_for_fm[factors_used_for_fm>=0]
     factors_used_for_fm = torch.from_numpy(factors_used_for_fm).to(DEVICE).int()
+
     ##### timing eval
     # print(f'Time to load data: {(time.time() - startTime_2):.2f} sec')
 
-    reduction = 10  # for things to fit into memory nicely
+    reduction = 2  # for things to fit into memory nicely
 
     sample_length = data.shape[1] / SAMPLE_RATE
     n_timeslides = int(args.timeslide_total_duration //
@@ -139,11 +138,13 @@ def main(args):
     reduced_len = (reduced_len // 1000) * 1000
     timeslide = torch.empty((2, reduced_len)).to(DEVICE)
 
+
     for timeslide_num in range(1, n_timeslides + 1):
+
         # print(f'starting timeslide: {timeslide_num}/{n_timeslides}')
 
         # ##### timing
-        # startTime_0 = time.time()
+        startTime_0 = time.time()
 
         # pick a random point in hanford, and one in livingston
         # bound it so don't have wrap around effect, which is okay 
@@ -200,11 +201,16 @@ def main(args):
                                             metric_score = filtered_final_score,
                                             timeslide_data = important_timeslide,
                                             time_event_ocurred = midpoints[indices_])
-
+        if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
+            track_data = np.zeros(1)
+            np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
+        tracked_sofar = np.load(f"{args.save_evals_path}/livetime_tracker.npy")
+        print("so far", tracked_sofar)
+        np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)  
         # save as a numpy file, with the index of timeslide_num
         #np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
         #print(f'Time to compute FM {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_02):.2f} sec')
-        print(f'Time GPU {device_str}, {timeslide_num}/{n_timeslides}')
+        print(f'Time GPU {device_str}, {timeslide_num}/{n_timeslides}, time: {time.time()-startTime_0 :.3f}')
 
         ##### timing eval
         #if timeslide_num>0: print(f'Time to eval, GPU {device_str}, {timeslide_num}/{n_timeslides} timeslides: {(time.time() - startTime_0):.2f} sec')
@@ -242,7 +248,11 @@ if __name__ == '__main__':
 
     folder_path = args.data_path
     print(folder_path)
-    for i, filename in enumerate(os.listdir(folder_path)):
+    p = np.random.permutation(len(os.listdir(folder_path)))
+
+    print("N files", args.files_to_eval)
+    save_evals_path = args.save_evals_path
+    for i, filename in enumerate(np.array(os.listdir(folder_path))[p]):
 
         if i >= args.files_to_eval and args.files_to_eval != -1:
             break
@@ -250,4 +260,9 @@ if __name__ == '__main__':
         if filename.endswith('.npy'):
             print(f'Running on {filename}')
             args.data_path = os.path.join(folder_path, filename)
+            args.save_evals_path = f"{save_evals_path}/{filename[:-4]}/"
+            try:
+                os.makedirs(args.save_evals_path)
+            except FileExistsError:
+                None
             main(args)
