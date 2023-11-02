@@ -126,26 +126,25 @@ rule generate_timeslides_for_far:
             dataclass=modelclasses),
     params:
         data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+        save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
     output:
-        save_evals_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}/evals_{files_to_eval}_files/'),
-        save_normalizations_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}/normalization_{files_to_eval}_files/')
+        f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
-        'mkdir -p {output.save_evals_path}; '
-        'mkdir -p {output.save_normalizations_path}; '
+        'mkdir -p {params.save_evals_path}; '
         'python3 scripts/evaluate_timeslides.py {input.model_path}\
             --data-path {params.data_path} \
-            --save-evals-path {output.save_evals_path} \
-            --save-normalizations-path {output.save_normalizations_path} \
+            --save-evals-path {params.save_evals_path} \
             --files-to-eval {wildcards.files_to_eval} \
             --timeslide-total-duration {wildcards.timeslide_total_duration} \
-            --gpu {wildcards.id}'
+            --gpu {wildcards.id} \
+            > {output}'
 
 rule all_timeslides_for_far:
     input:
-        expand(rules.generate_timeslides_for_far.output.save_evals_path,
-            id=range(4),
-            files_to_eval=820,
-            timeslide_total_duration=40000)
+        expand(rules.generate_timeslides_for_far.output,
+            id=range(1),
+            files_to_eval=1,
+            timeslide_total_duration=3600)
 
 rule evaluate_signals:
     params:
@@ -223,7 +222,7 @@ rule compute_far:
         metric_coefs_path = rules.train_final_metric.params.params_file,
         norm_factors_path = rules.train_final_metric.params.norm_factor_file,
         fm_model_path = rules.train_final_metric.params.fm_model_path,
-        data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
+        data_path = expand(rules.generate_timeslides_for_far.params.save_evals_path,
             id='{far_id}',
             version='O3av2',
             timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
