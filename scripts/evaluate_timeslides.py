@@ -216,3 +216,4 @@ if __name__ == '__main__':
             args.save_evals_path = f"{save_evals_folder}/{filename[:-4]}/"
             os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
+            print(f'Finished running on {filename}')

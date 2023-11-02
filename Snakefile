@@ -142,9 +142,9 @@ rule generate_timeslides_for_far:
 rule all_timeslides_for_far:
     input:
         expand(rules.generate_timeslides_for_far.output,
-            id=range(1),
-            files_to_eval=1,
-            timeslide_total_duration=3600)
+            id=range(4),
+            files_to_eval=-1,
+            timeslide_total_duration=32875) # 3.156e+8/800/4/3
 
 rule evaluate_signals:
     params:
