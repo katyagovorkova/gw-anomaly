@@ -66,8 +66,8 @@ rule fetch_timeslide_data:
     # 1253977218 -- 1 oct 2019
     """
     params:
-        start = 1248652818,
-        stop = 1253977218
+        start = 1243382418,
+        stop = 1248652818
     shell:
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
@@ -94,7 +94,8 @@ rule upload_data:
                dataclass='{dataclass}',
                version='{version}')
     output:
-        '/home/katya.govorkova/gwak/{version}/data/{dataclass}.npz'
+        #'/home/katya.govorkova/gwak/{version}/data/{dataclass}.npz'
+        'output/gwak-paper-final-models/data/{dataclass}.npz'
     shell:
         'mkdir -p /home/katya.govorkova/gwak/{wildcards.version}/data/; '
         'cp {input} {output}; '
@@ -120,31 +121,39 @@ rule train_quak:
         'python3 scripts/train_quak.py {params.data} {params.model_file} {params.savedir} '
 
 rule generate_timeslides_for_far:
-    input:
-        model_path = expand(
-            '/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
-            dataclass=modelclasses),
     params:
-        data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+        model_path = expand(
+            'output/gwak-paper-final-models/trained/models/{dataclass}.pt',
+            dataclass=modelclasses),
+        data_path = f'/n/home00/emoreno/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
         save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
     output:
         f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
-        'mkdir -p {params.save_evals_path}; '
-        'python3 scripts/evaluate_timeslides.py {input.model_path}\
+        """
+        echo "Model Path: {params.model_path}"
+        echo "Data Path: {params.data_path}"
+        echo "Save Evals Path: {params.save_evals_path}"
+        echo "Wildcards:"
+        echo "  ID: {wildcards.id}"
+        echo "  Timeslide Total Duration: {wildcards.timeslide_total_duration}"
+        echo "  Files to Eval: {wildcards.files_to_eval}"
+        mkdir -p {params.save_evals_path}
+        python3 scripts/evaluate_timeslides.py {params.model_path} \
             --data-path {params.data_path} \
             --save-evals-path {params.save_evals_path} \
             --files-to-eval {wildcards.files_to_eval} \
             --timeslide-total-duration {wildcards.timeslide_total_duration} \
             --gpu {wildcards.id} \
-            > {output}'
+            > {output}
+        """
 
 rule all_timeslides_for_far:
     input:
         expand(rules.generate_timeslides_for_far.output,
-            id=range(4),
+            id=range(1),
             files_to_eval=-1,
-            timeslide_total_duration=32875) # 3.156e+8/800/4/3
+            timeslide_total_duration=117782754)
 
 rule evaluate_signals:
     params:

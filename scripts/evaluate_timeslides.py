@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 from torch.nn.functional import conv1d
+from tqdm import tqdm
 
 from models import LinearModel
 from evaluate_data import full_evaluation
@@ -92,7 +93,7 @@ def main(args):
         1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
         2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
 
-    fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+    fm_model_path = ('output/gwak-paper-final-models/trained/fm_model.pt')
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
@@ -111,7 +112,8 @@ def main(args):
     reduced_len = (reduced_len // 1000) * 1000
     timeslide = torch.empty((2, reduced_len)).to(DEVICE)
 
-    for timeslide_num in range(1, n_timeslides + 1):
+    
+    for timeslide_num in tqdm(range(1, n_timeslides + 1)):
 
         # pick a random point in hanford, and one in livingston
         # bound it so don't have wrap around effect, which is okay
@@ -203,8 +205,14 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    folder_path = args.data_path
+    filename = args.data_path
     save_evals_folder = args.save_evals_path
+    if filename.endswith('.npy'):
+        args.save_evals_path = f"{save_evals_folder}/{filename[-25:-4]}/"
+        os.makedirs(args.save_evals_path, exist_ok=True)
+        main(args)
+        print(f'Finished running on {filename}')
+    '''
     for i, filename in enumerate(os.listdir(folder_path)):
 
         if i >= args.files_to_eval and args.files_to_eval!=-1:
@@ -217,3 +225,4 @@ if __name__ == '__main__':
             os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
             print(f'Finished running on {filename}')
+    '''
