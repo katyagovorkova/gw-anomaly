@@ -9,14 +9,18 @@ from tqdm import tqdm
 
 from models import LinearModel
 from evaluate_data import full_evaluation
-from helper_functions import load_gwak_models
+from helper_functions import load_gwak_models, split_into_segments_torch, std_normalizer_torch
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
     SAMPLE_RATE,
     FACTORS_NOT_USED_FOR_FM,
-    SEGMENT_OVERLAP
+    SMOOTHING_KERNEL_SIZES,
+    DO_SMOOTHING,
+    GPU_NAME,
+    SEGMENT_OVERLAP,
+    SEG_NUM_TIMESTEPS
     )
 
 
@@ -68,9 +72,30 @@ def extract_chunks(time_series, important_points, device, window_size=2048):
 
     return chunks
 
+def create_ffts_by_detec(data, device):
+    clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
+    data = data[:, :, :clipped_time_axis]
+
+    segments = split_into_segments_torch(data, device=device)
+
+    segments_normalized = std_normalizer_torch(segments)
+
+    # segments_normalized at this point is (N_batches, N_samples, 2, 100) and
+    # must be reshaped into (N_batches * N_samples, 2, 100) to work with
+    # quak_predictions
+    N_batches, N_samples = segments_normalized.shape[
+        0], segments_normalized.shape[1]
+    segments_normalized = torch.reshape(
+        segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
+
+    H_ffts = torch.fft.rfft(segments_normalized[:, 0, :], axis=-1)
+    L_ffts = torch.fft.rfft(segments_normalized[:, 1, :], axis=-1)
+    return H_ffts, L_ffts
+
 def main(args):
 
     device_str = f'cuda:{args.gpu}'
+    #device_str = "cpu"
     DEVICE = torch.device(device_str)
     gwak_models = load_gwak_models(args.model_path, DEVICE, device_str)
 
@@ -99,42 +124,83 @@ def main(args):
         fm_model_path, map_location=device_str))
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+    freq_mean_norm = mean_norm[2]
+    freq_std_norm = std_norm[2]
+    
+    #extract weights and bias
+    linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
+    bias_value = fm_model.layer.bias#.detach().cpu().numpy()
+    linear_weights = linear_weights#[:, :-1]
 
     # extract weights and bias
     linear_weights = fm_model.layer.weight
     bias_value = fm_model.layer.bias
 
-    reduction = 2  # for things to fit into memory nicely
+    #reduction = 1  # for things to fit into memory nicely
+
     sample_length = data.shape[1] / SAMPLE_RATE
     n_timeslides = int(args.timeslide_total_duration //
-                       sample_length) * reduction
-    reduced_len = int(data.shape[1] / reduction)
-    reduced_len = (reduced_len // 1000) * 1000
+                       sample_length)# * reduction
+    # print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
+    # print('Number of timeslides:', n_timeslides)
+    print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
+    print('Number of timeslides:', n_timeslides)
+
+    timeslide = torch.empty(data.shape, device=DEVICE)
+    reduced_len = (data.shape[1] // 1000) * 1000
     timeslide = torch.empty((2, reduced_len)).to(DEVICE)
 
-    #all_filtered_final_scaled_evals = []
-    #all_filtered_final_scores = []
-    #all_important_timeslides = []
-    #all_time_event_occurred = []
 
-    
+    data = data[:, :reduced_len]
+    timeslide = data
+    tfft = time.time()
+    H_ffts, L_ffts = create_ffts_by_detec(data[None, :, :], DEVICE)
+    print("fft time", time.time()-tfft)
+    # shift by the maximum possible correlation to start (more)
+    decorrelate = 50
+    timeslide[1, :] = torch.roll(timeslide[1, :], SEGMENT_OVERLAP*decorrelate)
+    L_ffts = torch.roll(L_ffts, decorrelate)
+
     for timeslide_num in tqdm(range(1, n_timeslides + 1)):
 
         # pick a random point in hanford, and one in livingston
-        # bound it so don't have wrap around effect, which is okay
+        # bound it so don't have wrap around effect, which is okay 
+        if 0:
+            hanford_start = int(np.random.uniform(0, data.shape[1]-SAMPLE_RATE-reduced_len))
+            livingston_start = hanford_start
+            while abs(hanford_start-livingston_start) < 41 * 5: # maximum time of flight, with extra factor
+                livingston_start = int(np.random.uniform(0, data.shape[1]-SAMPLE_RATE-reduced_len))
 
-        hanford_start = int(np.random.uniform(0, data.shape[1]-SAMPLE_RATE-reduced_len))
-        livingston_start = hanford_start
-        while abs(hanford_start-livingston_start) < 41 * 5: # maximum time of flight, with extra factor
-            livingston_start = int(np.random.uniform(0, data.shape[1]-SAMPLE_RATE-reduced_len))
+            timeslide[0, :] = data[0, hanford_start:hanford_start+reduced_len]
+            timeslide[1, :] = data[1, livingston_start:livingston_start+reduced_len]
+        else:
 
-        timeslide[0, :] = data[0, hanford_start:hanford_start+reduced_len]
-        timeslide[1, :] = data[1, livingston_start:livingston_start+reduced_len]
+            timeslide[1, :] = torch.roll(timeslide[1, :], SEGMENT_OVERLAP) #keep doing it
+            L_ffts = torch.roll(L_ffts, 1)
 
+        # compute the filter based on freq_corr cut
+        dot =  (torch.abs(torch.linalg.vecdot(
+            H_ffts, L_ffts, axis=-1)) - freq_mean_norm) / freq_std_norm
+        # rescale it to make the cut
+        
+        
+        freq_corr_weight = -0.54
+        bar = -1 * freq_corr_weight
+
+        selection = torch.where(dot>bar)[0] 
+        print(f"size reduction: {len(selection)}") #/H_ffts.shape[0]:.2f
+        
         final_values, midpoints = full_evaluation(
-                timeslide[None, :, :], args.model_path, DEVICE,
-                return_midpoints=True, loaded_models=gwak_models)
-
+                timeslide[None, :, :], args.model_path, DEVICE, 
+                return_midpoints=True, loaded_models=gwak_models,
+                selection=selection)
+        if 0:
+            means, stds = torch.mean(
+                final_values, axis=-2), torch.std(final_values, axis=-2)
+            means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
+            np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
+        #if timeslide_num>0: print(f'Time to do gwak eval {timeslide_num}/{n_timeslides} timeslide: {(time.time() - startTime_01):.2f} sec')
+        #startTime_02 = time.time()
         final_values = final_values[0]
 
         save_full_timeslide_readout = True
@@ -146,6 +212,7 @@ def main(args):
             final_values_slx = (final_values - mean_norm)/std_norm
 
             scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
+            print("scaled_evals", scaled_evals.shape)
             scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
             scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
                 kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
@@ -228,6 +295,7 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+
     filename = args.data_path
     save_evals_folder = args.save_evals_path
     if filename.endswith('.npy'):
@@ -238,7 +306,7 @@ if __name__ == '__main__':
     '''
     for i, filename in enumerate(os.listdir(folder_path)):
 
-        if i >= args.files_to_eval and args.files_to_eval!=-1:
+        if i >= args.files_to_eval and args.files_to_eval != -1:
             break
 
         if filename.endswith('.npy'):

@@ -25,7 +25,7 @@ from config import (
 )
 
 
-def full_evaluation(data, model_folder_path, device, return_midpoints=False, loaded_models=None):
+def full_evaluation(data, model_folder_path, device, return_midpoints=False, loaded_models=None, selection=None):
     '''
     Passed in data is of shape (N_samples, 2, time_axis)
     '''
@@ -37,11 +37,14 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
     data = data[:, :, :clipped_time_axis]
 
-    ty = time.time()
     segments = split_into_segments_torch(data, device=device)
     
     slice_midpoints = np.arange(SEG_NUM_TIMESTEPS // 2, segments.shape[1] * (
         SEGMENT_OVERLAP) + SEG_NUM_TIMESTEPS // 2, SEGMENT_OVERLAP)
+
+    if selection is not None:
+        segments = segments[:, selection]
+        slice_midpoints = slice_midpoints[selection.cpu().numpy()]
 
     segments_normalized = std_normalizer_torch(segments)
 
@@ -78,8 +81,10 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     else:
         quak_predictions = quak_predictions[:, edge_start:, :]
         slice_midpoints = slice_midpoints[edge_start:]
-
-    final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
+    if selection != None:
+        final_values = torch.cat([quak_predictions, pearson_values[:, selection]], dim=-1)
+    else:
+        final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
 
     if return_midpoints:
         return final_values, slice_midpoints

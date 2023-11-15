@@ -73,7 +73,7 @@ rule fetch_timeslide_data:
 
 rule generate_data:
     input:
-        omicron = 'output/omicron/',
+        omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
         intersections = expand(rules.find_valid_segments.params.save_path,
             period=PERIOD),
     params:
@@ -157,7 +157,10 @@ rule all_timeslides_for_far:
 
 rule evaluate_signals:
     params:
-        source_file = expand(rules.upload_data.output,
+        #source_file = expand(rules.upload_data.output,
+        #                     dataclass='{signal_dataclass}',
+        #                     version='{version}'),
+        source_file = expand(rules.generate_data.output,
                              dataclass='{signal_dataclass}',
                              version='{version}'),
         model_path = expand(rules.train_quak.params.model_file,
@@ -167,6 +170,21 @@ rule evaluate_signals:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
         'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {params.model_path}'
+
+rule plot_cut_efficiency:
+    params:
+        generated_data_file = expand(rules.generate_data.output,
+                             dataclass='{signal_dataclass}',
+                             version='{version}'),
+        evaluated_data_file = expand(rules.evaluate_signals.output,
+                             version='{version}',
+                             signal_dataclass='{signal_dataclass}'),
+    output:
+        save_file = directory('output/{version}/cut_effic/{signal_dataclass}/')
+    shell:
+        'python3 scripts/plot_cut_efficiency.py \
+                    {params.evaluated_data_file} {output.save_file} \
+                    {params.generated_data_file}'
 
 rule generate_timeslides_for_fm:
     params:
