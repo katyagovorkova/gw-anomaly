@@ -5,6 +5,7 @@ import numpy as np
 
 import torch
 from torch.nn.functional import conv1d
+from tqdm import tqdm
 
 from models import LinearModel
 from evaluate_data import full_evaluation
@@ -117,7 +118,7 @@ def main(args):
         1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
         2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
 
-    fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+    fm_model_path = ('output/gwak-paper-final-models/trained/fm_model.pt')
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
@@ -149,6 +150,7 @@ def main(args):
     reduced_len = (data.shape[1] // 1000) * 1000
     timeslide = torch.empty((2, reduced_len)).to(DEVICE)
 
+
     data = data[:, :reduced_len]
     timeslide = data
     tfft = time.time()
@@ -159,7 +161,7 @@ def main(args):
     timeslide[1, :] = torch.roll(timeslide[1, :], SEGMENT_OVERLAP*decorrelate)
     L_ffts = torch.roll(L_ffts, decorrelate)
 
-    for timeslide_num in range(1, n_timeslides + 1):
+    for timeslide_num in tqdm(range(1, n_timeslides + 1)):
 
         # pick a random point in hanford, and one in livingston
         # bound it so don't have wrap around effect, which is okay 
@@ -204,7 +206,7 @@ def main(args):
         save_full_timeslide_readout = True
         if save_full_timeslide_readout:
 
-            FAR_2days = -1.617 # lowest FAR bin we want to worry about
+            FAR_2days = 10000 # lowest FAR bin we want to worry about
 
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             final_values_slx = (final_values - mean_norm)/std_norm
@@ -219,8 +221,8 @@ def main(args):
 
             indices = torch.where(smoothed_scores < FAR_2days)[0]
 
-            if len(indices) > 0:
-                indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+            #if len(indices) > 0:
+            #    indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
             filtered_final_score = smoothed_scores.index_select(0, indices)
             filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
@@ -233,12 +235,30 @@ def main(args):
             filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
             filtered_final_score = filtered_final_score.detach().cpu().numpy()
             if len(indices_) > 0:
-                print(len(indices_))
-                np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
-                                            final_scaled_evals=filtered_final_scaled_evals,
-                                            metric_score = filtered_final_score,
-                                            timeslide_data = important_timeslide,
-                                            time_event_ocurred = midpoints[indices_])
+                #print(len(indices_))
+                #np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
+                #                            final_scaled_evals=filtered_final_scaled_evals,
+                #                            metric_score = filtered_final_score,
+                #                            timeslide_data = important_timeslide,
+                #                            time_event_ocurred = midpoints[indices_])
+
+                #all_filtered_final_scaled_evals.append(filtered_final_scaled_evals)
+                #all_filtered_final_scores.append(filtered_final_score)
+                #all_important_timeslides.append(important_timeslide)
+                #all_time_event_occurred.append(midpoints[indices_])
+
+                if not os.path.exists(f"{args.save_evals_path}/timeslide_evals_full.npz"):
+                    np.savez(f'{args.save_evals_path}/timeslide_evals_full.npz',
+                        final_scaled_evals=filtered_final_scaled_evals,
+                        metric_score=filtered_final_score)
+                saved_evals = np.load(f"{args.save_evals_path}/timeslide_evals_full.npz")
+
+                # Now save all the data into one .npz file
+                np.savez(f'{args.save_evals_path}/timeslide_evals_full.npz',
+                        final_scaled_evals=np.concatenate((filtered_final_scaled_evals, saved_evals['final_scaled_evals']), axis=0),
+                        metric_score=np.concatenate((filtered_final_score, saved_evals['metric_score']), axis=0))
+
+
         if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
             track_data = np.zeros(1)
             np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
@@ -246,7 +266,7 @@ def main(args):
         np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)
 
         # save as a numpy file, with the index of timeslide_num
-        np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
+        #np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
 
 
 if __name__ == '__main__':
@@ -275,13 +295,16 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    folder_path = args.data_path
-    print(folder_path)
-    #p = np.random.permutation(len(os.listdir(folder_path)))
 
-    print("N files", args.files_to_eval)
-    save_evals_path = args.save_evals_path
-    for i, filename in enumerate(np.array(os.listdir(folder_path))):#[p]):
+    filename = args.data_path
+    save_evals_folder = args.save_evals_path
+    if filename.endswith('.npy'):
+        args.save_evals_path = f"{save_evals_folder}/{filename[-25:-4]}/"
+        os.makedirs(args.save_evals_path, exist_ok=True)
+        main(args)
+        print(f'Finished running on {filename}')
+    '''
+    for i, filename in enumerate(os.listdir(folder_path)):
 
         if i >= args.files_to_eval and args.files_to_eval != -1:
             break
@@ -293,3 +316,4 @@ if __name__ == '__main__':
             os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
             print(f'Finished running on {filename}')
+    '''
