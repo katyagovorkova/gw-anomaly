@@ -112,6 +112,11 @@ def main(args):
     reduced_len = (reduced_len // 1000) * 1000
     timeslide = torch.empty((2, reduced_len)).to(DEVICE)
 
+    #all_filtered_final_scaled_evals = []
+    #all_filtered_final_scores = []
+    #all_important_timeslides = []
+    #all_time_event_occurred = []
+
     
     for timeslide_num in tqdm(range(1, n_timeslides + 1)):
 
@@ -135,7 +140,7 @@ def main(args):
         save_full_timeslide_readout = True
         if save_full_timeslide_readout:
 
-            FAR_2days = -1.617 # lowest FAR bin we want to worry about
+            FAR_2days = 10000 # lowest FAR bin we want to worry about
 
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             final_values_slx = (final_values - mean_norm)/std_norm
@@ -149,8 +154,8 @@ def main(args):
 
             indices = torch.where(smoothed_scores < FAR_2days)[0]
 
-            if len(indices) > 0:
-                indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+            #if len(indices) > 0:
+            #    indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
             filtered_final_score = smoothed_scores.index_select(0, indices)
             filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
@@ -163,12 +168,30 @@ def main(args):
             filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
             filtered_final_score = filtered_final_score.detach().cpu().numpy()
             if len(indices_) > 0:
-                print(len(indices_))
-                np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
-                                            final_scaled_evals=filtered_final_scaled_evals,
-                                            metric_score = filtered_final_score,
-                                            timeslide_data = important_timeslide,
-                                            time_event_ocurred = midpoints[indices_])
+                #print(len(indices_))
+                #np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
+                #                            final_scaled_evals=filtered_final_scaled_evals,
+                #                            metric_score = filtered_final_score,
+                #                            timeslide_data = important_timeslide,
+                #                            time_event_ocurred = midpoints[indices_])
+
+                #all_filtered_final_scaled_evals.append(filtered_final_scaled_evals)
+                #all_filtered_final_scores.append(filtered_final_score)
+                #all_important_timeslides.append(important_timeslide)
+                #all_time_event_occurred.append(midpoints[indices_])
+
+                if not os.path.exists(f"{args.save_evals_path}/timeslide_evals_full.npz"):
+                    np.savez(f'{args.save_evals_path}/timeslide_evals_full.npz',
+                        final_scaled_evals=filtered_final_scaled_evals,
+                        metric_score=filtered_final_score)
+                saved_evals = np.load(f"{args.save_evals_path}/timeslide_evals_full.npz")
+
+                # Now save all the data into one .npz file
+                np.savez(f'{args.save_evals_path}/timeslide_evals_full.npz',
+                        final_scaled_evals=np.concatenate((filtered_final_scaled_evals, saved_evals['final_scaled_evals']), axis=0),
+                        metric_score=np.concatenate((filtered_final_score, saved_evals['metric_score']), axis=0))
+
+
         if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
             track_data = np.zeros(1)
             np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
@@ -176,7 +199,7 @@ def main(args):
         np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)
 
         # save as a numpy file, with the index of timeslide_num
-        np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
+        #np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
 
 
 if __name__ == '__main__':
