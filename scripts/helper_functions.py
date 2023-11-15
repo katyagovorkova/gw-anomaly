@@ -70,9 +70,10 @@ def freq_loss_torch(a, b):
     a2b = torch.abs(torch.linalg.vecdot(a_, b_, axis=-1))
     a2a = torch.abs(torch.linalg.vecdot(
         a_[:, 0, :], a_[:, 1, :], axis=-1))[:, None]
-    b2b = torch.abs(torch.linalg.vecdot(
-        b_[:, 0, :], b_[:, 1, :], axis=-1))[:, None]
-    return torch.hstack([a2b, a2a, b2b])
+    # b2b = torch.abs(torch.linalg.vecdot(
+    #     b_[:, 0, :], b_[:, 1, :], axis=-1))[:, None]
+    # return torch.hstack([a2b, a2a, b2b])
+    return torch.hstack([a2b, a2a])
 
 
 def mae_torch_coherent(a, b):
