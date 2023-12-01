@@ -51,6 +51,7 @@ mkdir -p "${SAVE_EVALS_PATH}"
 # When calling the script, use the ${!var} to dereference the variables and pass them to the script.
 # Also, you need to "unwrap" the MODEL_PATH array and pass each item to the script.
 {
+set -x
 python scripts/evaluate_timeslides.py "${MODEL_PATH[@]}" --data-path "${DATA_PATH}" --save-evals-path "${SAVE_EVALS_PATH}"  --gpu "${GPU_ID}" --timeslide-total-duration "${TIMESLIDE_TOTAL_DURATION}" --files-to-eval "${FILES_TO_EVAL}"
 set +x
 } &> "output/logs/${SLURM_JOB_ID}_evaluate_timeslides.log"
