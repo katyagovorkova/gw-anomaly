@@ -3,17 +3,22 @@ import argparse
 import numpy as np
 import torch
 import time
-
-from quak_predict import quak_eval
+from typing import Optional
+from quak_predict import quak_eval_snapshotter, quak_eval
 from helper_functions import (
     std_normalizer_torch,
     split_into_segments_torch,
     stack_dict_into_tensor,
     pearson_computation
 )
+
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+sys.path.append('/n/home00/emoreno/gw-anomaly/ml4gw')
+from ml4gw.transforms import SpectralDensity, Whiten
+from ml4gw.utils.slicing import unfold_windows
+
 from config import (
     SEGMENT_OVERLAP,
     GPU_NAME,
@@ -21,8 +26,99 @@ from config import (
     DATA_EVAL_MAX_BATCH,
     SEG_NUM_TIMESTEPS,
     RETURN_INDIV_LOSSES,
-    SCALE
+    SCALE,
+    SAMPLE_RATE,
+    BATCH_SIZE,
+    SEG_NUM_TIMESTEPS,
+    BANDPASS_LOW, 
+    NUM_IFOS
 )
+
+PSD_LENGTH = 64
+FDURATION = 2
+BATCH_SIZE = 2048
+WINDOW_LENGTH = SEG_NUM_TIMESTEPS / SAMPLE_RATE
+STRIDE = (SEG_NUM_TIMESTEPS - SEGMENT_OVERLAP) / SAMPLE_RATE
+
+class BatchGenerator(torch.nn.Module):
+    def __init__(
+        self,
+        num_channels: int,
+        sample_rate: float,
+        kernel_length: float,
+        fftlength: float,
+        fduration: float,
+        psd_length: float,
+        inference_sampling_rate: float,
+        highpass: Optional[float] = None,
+    ) -> None:
+        super().__init__()
+        self.spectral_density = SpectralDensity(
+            sample_rate=SAMPLE_RATE,
+            fftlength=fftlength,
+            overlap=None,  # defaults to fftlength / 2
+            average="median",
+            fast=True  # not accurate for lowest 2 frequency bins, but we don't care about those
+        )
+        self.whitener = Whiten(
+            fduration=fduration,
+            sample_rate=sample_rate,
+            highpass=highpass
+        )
+
+        self.step_size = int(sample_rate / inference_sampling_rate)
+        self.kernel_size = int(kernel_length * sample_rate)
+        self.fsize = int(fduration * sample_rate)
+        self.psd_size = int(psd_length * sample_rate)
+        self.num_channels = num_channels
+
+    @property
+    def state_size(self):
+        return self.psd_size + self.kernel_size + self.fsize - self.step_size
+
+    def get_initial_state(self):
+        return torch.zeros((self.num_channels, self.state_size))
+
+    def forward(self, X, state):
+        state = torch.cat([state, X], dim=-1)
+        split = [self.psd_size, state.size(-1) - self.psd_size]
+        whiten_background, X = torch.split(state, split, dim=-1)
+
+        # only use the PSD of the non-injected data for computing
+        # our whitening to avoid biasing our PSD estimate
+        psd = self.spectral_density(whiten_background.double())
+        X = self.whitener(X, psd)
+        X = unfold_windows(X, self.kernel_size, self.step_size)
+        X = X.reshape(-1, self.num_channels, self.kernel_size)
+
+        # divide by standard deviation along time axis
+        X = X / X.std(axis=-1, keepdims=True)
+        return X, state[:, -self.state_size :]
+
+def full_evaluation_snapshotter(data, loaded_models, device, shift, return_midpoints=False):
+    '''
+    Passed in data is of shape (N_samples, 2, time_axis)
+    '''
+
+    batcher = BatchGenerator(
+        num_channels=2,
+        sample_rate=SAMPLE_RATE,
+        kernel_length=WINDOW_LENGTH,
+        fftlength=2,
+        fduration=FDURATION,
+        psd_length=PSD_LENGTH,
+        inference_sampling_rate=1 / STRIDE,
+        highpass=BANDPASS_LOW
+    )
+    batcher = batcher.to(device)
+
+    quak_predictions_dict = quak_eval_snapshotter(
+        data, loaded_models, batcher, device, shift)
+
+    quak_predictions = stack_dict_into_tensor(  
+        quak_predictions_dict, device=device)
+    
+    return quak_predictions
 
 
 def full_evaluation(data, model_folder_path, device, return_midpoints=False, loaded_models=None, selection=None):
@@ -55,8 +151,10 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
         0], segments_normalized.shape[1]
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
+    
     quak_predictions_dict = quak_eval(
         segments_normalized, model_folder_path, device, loaded_models=loaded_models)
+
     quak_predictions = stack_dict_into_tensor(  
         quak_predictions_dict, device=device)
 
@@ -66,6 +164,8 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     else:
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
+    
+    # pearson 
     pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
     
     # may need to manually override this

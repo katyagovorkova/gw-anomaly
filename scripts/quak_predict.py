@@ -3,10 +3,14 @@ import numpy as np
 import argparse
 import torch
 import time
+from collections import defaultdict
 from helper_functions import mae_torch, freq_loss_torch
 from models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT
-
+import h5py
 import sys
+sys.path.append('/n/home00/emoreno/gw-anomaly/ml4gw')
+from ml4gw.transforms import ShiftedPearsonCorrelation
+
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (NUM_IFOS,
@@ -15,9 +19,81 @@ from config import (NUM_IFOS,
                     MODEL,
                     FACTOR,
                     GPU_NAME,
-                    RECREATION_LIMIT)
+                    RECREATION_LIMIT,
+                    SAMPLE_RATE,
+                    BATCH_SIZE,
+                    SEG_NUM_TIMESTEPS,
+                    SEGMENT_OVERLAP)
+
+STRIDE = (SEG_NUM_TIMESTEPS - SEGMENT_OVERLAP) / SAMPLE_RATE
+
+def data_iterator(dataset: h5py.Dataset, shifts: list[float], batch_size: int = BATCH_SIZE):
+    shift_sizes = [int(i * SAMPLE_RATE) for i in shifts]
+    num_channels, size = dataset.shape
+
+    size -= max(shift_sizes)
+    stride_size = int(STRIDE * SAMPLE_RATE)
+    num_updates = size // stride_size
+    num_batches = int(num_updates // batch_size)
+
+    update_size = stride_size * batch_size
+    idx = np.arange(update_size)
+    x = np.zeros((num_channels, update_size))
+    for i in range(num_batches):
+        for j in range(num_channels):
+            start = i + update_size + shift_sizes[j]
+            stop = start + update_size
+            x[j] = dataset[j, start: stop]
+        yield torch.Tensor(x)
+
+@torch.no_grad()
+def quak_eval_snapshotter(data, models, batcher, device, SHIFT):
+    pearson = ShiftedPearsonCorrelation(int(0.01 * SAMPLE_RATE))
+    DEVICE = device
+
+    for segment, dataset in data.items():
+        start_time = time.time()
+        # initialize a container for our predictions
+        # and create an initial blank snapshot state.
+        # The most efficient way to do this would be
+        # to allocate all the memory up front since
+        # we know how many steps to take, but this
+        # will work for the time being.
+        predictions = defaultdict(list)
+        state = batcher.get_initial_state().to(DEVICE)
+        num_preds = 0
+        for x in data_iterator(dataset, SHIFT):
+            # move the timeseries onto the GPU, then update our
+            # state and perform preprocessing
+            x = x.to(DEVICE)
+            X, state = batcher(x, state)
+
+            # feed the preprocessed data through each one of our models
+            for name, model in models.items():
+                
+                y = model(X)
+                loss = freq_loss_torch(y, X)
+                predictions[name].append(loss)
+            # compute the pearson correlation between
+            # both interferometer channels
+            corr = pearson(X[:, :1], X[:, 1:])
+            corr = corr.max(dim=0).values[:, 0]
+            predictions["pearson"].append(corr)
+
+            num_preds += len(X)
+
+        # concatenate everything back on the CPU then click our stopwatch
+        predictions = {k: torch.cat(v) for k, v in predictions.items()}
+        end_time = time.time()
+        duration = end_time - start_time
+        throughput = num_preds * STRIDE / duration
+        print(f"Number of predictions: {num_preds}")
+        print(f"Throughput: {throughput:.2f} Hz")
+    
+    return predictions
 
 
+@torch.no_grad()
 def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None):
     # data required to be torch tensor at this point
 

@@ -133,20 +133,26 @@ def stack_dict_into_tensor(data_dict, device=None):
     '''
     fill_len = len(data_dict['bbh'])
     if RETURN_INDIV_LOSSES:
-        stacked_tensor = torch.empty(
-            (fill_len, len(CLASS_ORDER) * SCALE), device=device)
+        if "pearson" in CLASS_ORDER:
+            stacked_tensor = torch.empty(
+                (fill_len, (len(CLASS_ORDER) - 1) * SCALE + 1), device=device)
+        else:
+            stacked_tensor = torch.empty(
+                (fill_len, (len(CLASS_ORDER) * SCALE)), device=device)
     else:
         stacked_tensor = torch.empty(
             (fill_len, len(CLASS_ORDER)), device=device)
     for class_name in data_dict.keys():
-        stack_index = CLASS_ORDER.index(class_name)
-
-        if RETURN_INDIV_LOSSES:
-            stacked_tensor[:, stack_index * SCALE:stack_index *
-                           SCALE + SCALE] = data_dict[class_name]
-        else:
-            stacked_tensor[:, stack_index] = data_dict[class_name]
-
+        if class_name != "pearson":
+            stack_index = CLASS_ORDER.index(class_name)
+            if RETURN_INDIV_LOSSES:
+                stacked_tensor[:, stack_index * SCALE:stack_index *
+                                SCALE + SCALE] = data_dict[class_name]
+            else:
+                stacked_tensor[:, stack_index] = data_dict[class_name]
+        elif class_name == "pearson":
+            torch.cat((stacked_tensor, data_dict[class_name].unsqueeze(1)), axis=1)
+            
     return stacked_tensor
 
 
@@ -191,7 +197,7 @@ def load_gwak_models(model_path, device, device_name):
                         BOTTLENECK=BOTTLENECK[model_name]).to(device)
 
         model.load_state_dict(torch.load(dpath, map_location=device_name))
-        loaded_models[dpath] = model
+        loaded_models[model_name] = model
 
     return loaded_models 
 
