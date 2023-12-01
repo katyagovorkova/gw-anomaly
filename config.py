@@ -82,7 +82,8 @@ LOSS = 'MAE'
 OPTIMIZER = 'Adam'
 VALIDATION_SPLIT = 0.15
 TRAINING_VERBOSE = True
-CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf']
+#CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf']
+CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf', 'pearson']
 LIMIT_TRAINING_DATA = None
 CURRICULUM_SNRS = [256, 128, 64, 32, 16]
 
