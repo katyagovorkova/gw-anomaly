@@ -9,7 +9,7 @@ sys.path.append(
 from config import DO_SMOOTHING, SMOOTHING_KERNEL_SIZES
 
 hists = snakemake.input
-save_path = snakemake.params[0]
+save_path = snakemake.output[0]
 
 if DO_SMOOTHING:
 

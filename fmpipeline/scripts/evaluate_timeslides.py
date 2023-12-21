@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import argparse
 import numpy as np
 
@@ -125,7 +126,7 @@ def main(args):
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
     freq_mean_norm = mean_norm[2]
     freq_std_norm = std_norm[2]
-    
+
     #extract weights and bias
     linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
     bias_value = fm_model.layer.bias#.detach().cpu().numpy()
@@ -162,7 +163,7 @@ def main(args):
     for timeslide_num in range(1, n_timeslides + 1):
 
         # pick a random point in hanford, and one in livingston
-        # bound it so don't have wrap around effect, which is okay 
+        # bound it so don't have wrap around effect, which is okay
         if 0:
             hanford_start = int(np.random.uniform(0, data.shape[1]-SAMPLE_RATE-reduced_len))
             livingston_start = hanford_start
@@ -176,22 +177,23 @@ def main(args):
             timeslide[1, :] = torch.roll(timeslide[1, :], SEGMENT_OVERLAP) #keep doing it
             L_ffts = torch.roll(L_ffts, 1)
 
-        # compute the filter based on freq_corr cut
-        dot =  (torch.abs(torch.linalg.vecdot(
-            H_ffts, L_ffts, axis=-1)) - freq_mean_norm) / freq_std_norm
-        # rescale it to make the cut
-        
-        
-        freq_corr_weight = -0.54
-        bar = -1 * freq_corr_weight
+        # # compute the filter based on freq_corr cut
+        # dot =  (torch.abs(torch.linalg.vecdot(
+        #     H_ffts, L_ffts, axis=-1)) - freq_mean_norm) / freq_std_norm
+        # # rescale it to make the cut
 
-        selection = torch.where(dot>bar)[0] 
-        print(f"size reduction: {len(selection)}") #/H_ffts.shape[0]:.2f
-        
+
+        # freq_corr_weight = -0.54
+        # bar = -1 * freq_corr_weight
+
+        # selection = torch.where(dot>bar)[0]
+        # print(f"size reduction: {len(selection)}") #/H_ffts.shape[0]:.2f
+
         final_values, midpoints = full_evaluation(
-                timeslide[None, :, :], args.model_path, DEVICE, 
+                timeslide[None, :, :], args.model_path, DEVICE,
                 return_midpoints=True, loaded_models=gwak_models,
-                selection=selection)
+                # selection=selection)
+                selection=None)
         if 0:
             means, stds = torch.mean(
                 final_values, axis=-2), torch.std(final_values, axis=-2)
@@ -201,7 +203,7 @@ def main(args):
         #startTime_02 = time.time()
         final_values = final_values[0]
 
-        save_full_timeslide_readout = True
+        save_full_timeslide_readout = False
         if save_full_timeslide_readout:
 
             FAR_2days = -1.617 # lowest FAR bin we want to worry about
@@ -289,7 +291,7 @@ if __name__ == '__main__':
         if filename.endswith('.npy'):
 
             args.data_path = os.path.join(folder_path, filename)
-            args.save_evals_path = f"{save_evals_folder}/{filename[:-4]}/"
+            args.save_evals_path = f"{save_evals_path}/{filename[:-4]}/"
             os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
             print(f'Finished running on {filename}')

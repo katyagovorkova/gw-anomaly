@@ -202,7 +202,7 @@ def main(args):
             means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
             np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
             final_values = final_values.detach().cpu().numpy()
-            if True: 
+            if False:
                 FAR_2days = -1.617 #lowest FAR bin we have
                 norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
                 fm_model_path = (f"/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")

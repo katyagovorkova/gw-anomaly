@@ -842,33 +842,34 @@ def main(args):
     bias = model.layer.bias.data.cpu().numpy()[0]
     print('bias!:', bias)
 
-    weights = []
+    print(f'Learned weights: {learned_dp_weights}')
+    # weights = []
 
-    for i in range(5):
-        arr = np.zeros(weight.shape)
-        arr[3*i] = weight[3*i]
-        arr[3*i+1] = weight[3*i+1]
-        weights.append(arr)
+    # for i in range(5):
+    #     arr = np.zeros(weight.shape)
+    #     arr[3*i] = weight[3*i]
+    #     arr[3*i+1] = weight[3*i+1]
+    #     weights.append(arr)
 
-    # shared, original -> original coefficient
-    arr = np.zeros(weight.shape)
-    for i in range(5):
-        arr[3*i+2] = weight[3*i+2]
-    weights.append(arr)
+    # # shared, original -> original coefficient
+    # arr = np.zeros(weight.shape)
+    # for i in range(5):
+    #     arr[3*i+2] = weight[3*i+2]
+    # weights.append(arr)
 
-    # pearson coefficient
-    arr = np.zeros(weight.shape)
-    arr[-1] = weight[-1]
-    weights.append(arr)
+    # # pearson coefficient
+    # arr = np.zeros(weight.shape)
+    # arr[-1] = weight[-1]
+    # weights.append(arr)
 
     do_snr_vs_far = 1
     do_fake_roc = 1
-    do_3_panel_plot = 1
-    do_combined_loss_curves = 1
-    do_train_signal_example_plots = 1
-    do_anomaly_signal_show = 1
-    do_learned_fm_weights = 1
-    do_make_roc_curves = 1
+    do_3_panel_plot = 0
+    do_combined_loss_curves = 0
+    do_train_signal_example_plots = 0
+    do_anomaly_signal_show = 0
+    do_learned_fm_weights = 0
+    do_make_roc_curves = 0
 
     if do_snr_vs_far or do_make_roc_curves:
 
@@ -889,19 +890,19 @@ def main(args):
 
             print(f'loading {tag}')
             ts = time.time()
-            data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
+            data = np.load(f'/home/katya.govorkova/gwak-paper-final-models/evaluated/{tag}_varying_snr_evals.npy')
             data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
 
             print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
 
             data = (data - means) / stds
             data = data#[1000:]
-            snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-            hrss = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_hrss.npz.npy')
+            snrs = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
-            hrss_dict[tag] = hrss
+            # hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
