@@ -198,7 +198,7 @@ rule plot_results:
                 version=VERSION)],
         fm_model_path = rules.train_final_metric.params.fm_model_path
     params:
-        evaluation_dir = f'output/{VERSION}/',
+        evaluation_dir = f'/home/katya.govorkova/gwak-paper-final-models/',
         save_path = directory(f'output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '

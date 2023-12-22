@@ -864,12 +864,12 @@ def main(args):
 
     do_snr_vs_far = 1
     do_fake_roc = 1
-    do_3_panel_plot = 0
-    do_combined_loss_curves = 0
-    do_train_signal_example_plots = 0
-    do_anomaly_signal_show = 0
-    do_learned_fm_weights = 0
-    do_make_roc_curves = 0
+    do_3_panel_plot = 1
+    do_combined_loss_curves = 1
+    do_train_signal_example_plots = 1
+    do_anomaly_signal_show = 1
+    do_learned_fm_weights = 1
+    do_make_roc_curves = 1
 
     if do_snr_vs_far or do_make_roc_curves:
 
