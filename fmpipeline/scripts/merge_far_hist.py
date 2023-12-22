@@ -2,7 +2,6 @@ import os
 import sys
 import argparse
 import numpy as np
-import torch
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))

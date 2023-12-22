@@ -2,9 +2,9 @@ import os
 import numpy as np
 import argparse
 import torch
-import time
+
 from helper_functions import mae_torch, freq_loss_torch
-from models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT
+from models import LSTM_AE_SPLIT, FAT
 
 import sys
 sys.path.append(
@@ -13,7 +13,6 @@ from config import (NUM_IFOS,
                     SEG_NUM_TIMESTEPS,
                     BOTTLENECK,
                     MODEL,
-                    FACTOR,
                     GPU_NAME,
                     RECREATION_LIMIT)
 

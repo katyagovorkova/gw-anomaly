@@ -103,7 +103,7 @@ rule validate_data:
     input:
         expand(rules.upload_data.output,
                dataclass=modelclasses+dataclasses,
-               version='O3av2')
+               version=VERSION)
     shell:
         'mkdir -p data/{VERSION}/; '
         'python3 scripts/validate_data.py {input}'

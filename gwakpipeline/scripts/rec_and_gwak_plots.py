@@ -5,38 +5,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as st
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 
-from quak_predict import quak_eval
-from helper_functions import mae_torch, freq_loss_torch
+from gwak_predict import gwak_eval
 from models import LinearModel
-from helper_functions import (
-    stack_dict_into_numpy,
-    stack_dict_into_numpy_segments,
-    compute_fars,
-    far_to_metric,
-    stack_dict_into_tensor
-)
+from helper_functions import stack_dict_into_tensor
+
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
     SEG_NUM_TIMESTEPS,
     SAMPLE_RATE,
     CLASS_ORDER,
-    SPEED,
     NUM_IFOS,
     IFO_LABELS,
     RECREATION_WIDTH,
     RECREATION_HEIGHT_PER_SAMPLE,
     RECREATION_SAMPLES_PER_PLOT,
-    SNR_VS_FAR_BAR,
-    SNR_VS_FAR_HORIZONTAL_LINES,
-    SNR_VS_FAR_HL_LABELS,
-    SEGMENT_OVERLAP,
-    HISTOGRAM_BIN_DIVISION,
-    HISTOGRAM_BIN_MIN,
     GPU_NAME,
     FACTORS_NOT_USED_FOR_FM
 )
@@ -341,7 +325,7 @@ def main(args):
             datum = datum / stds
             dat_clean = dat_clean / stds
             datum = torch.from_numpy(datum).float().to(DEVICE)
-            evals = quak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
+            evals = gwak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
             loss_values_SNR[class_label][SNR_ind] = evals['freq_loss']
             original = []
             recreated = []
@@ -361,7 +345,7 @@ def main(args):
             stds = np.std(datum, axis=-1)[:, :, np.newaxis]
             datum = datum / stds
             datum = torch.from_numpy(datum).float().to(DEVICE)
-            evals = quak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
+            evals = gwak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
             loss_values[class_label] = evals['freq_loss']
             try:
                 os.makedirs(f'{args.savedir}/{class_label}/')

@@ -2,9 +2,8 @@ import os
 import argparse
 import numpy as np
 import torch
-import time
 
-from quak_predict import quak_eval
+from qwak_predict import qwak_eval
 from helper_functions import (
     std_normalizer_torch,
     split_into_segments_torch,
@@ -55,7 +54,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
         0], segments_normalized.shape[1]
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
-    quak_predictions_dict = quak_eval(
+    quak_predictions_dict = qwak_eval(
         segments_normalized, model_folder_path, device, loaded_models=loaded_models)
     quak_predictions = stack_dict_into_tensor(  
         quak_predictions_dict, device=device)

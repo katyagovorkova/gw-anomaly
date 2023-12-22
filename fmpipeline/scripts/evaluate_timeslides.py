@@ -16,9 +16,6 @@ sys.path.append(
 from config import (
     SAMPLE_RATE,
     FACTORS_NOT_USED_FOR_FM,
-    SMOOTHING_KERNEL_SIZES,
-    DO_SMOOTHING,
-    GPU_NAME,
     SEGMENT_OVERLAP,
     SEG_NUM_TIMESTEPS
     )
