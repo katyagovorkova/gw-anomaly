@@ -843,24 +843,24 @@ def main(args):
     print('bias!:', bias)
 
     print(f'Learned weights: {learned_dp_weights}')
-    # weights = []
+    weights = []
 
-    # for i in range(5):
-    #     arr = np.zeros(weight.shape)
-    #     arr[3*i] = weight[3*i]
-    #     arr[3*i+1] = weight[3*i+1]
-    #     weights.append(arr)
+    for i in range(5):
+        arr = np.zeros(weight.shape)
+        arr[3*i] = weight[3*i]
+        arr[3*i+1] = weight[3*i+1]
+        weights.append(arr)
 
-    # # shared, original -> original coefficient
-    # arr = np.zeros(weight.shape)
-    # for i in range(5):
-    #     arr[3*i+2] = weight[3*i+2]
-    # weights.append(arr)
+    # shared, original -> original coefficient
+    arr = np.zeros(weight.shape)
+    for i in range(5):
+        arr[3*i+2] = weight[3*i+2]
+    weights.append(arr)
 
-    # # pearson coefficient
-    # arr = np.zeros(weight.shape)
-    # arr[-1] = weight[-1]
-    # weights.append(arr)
+    # pearson coefficient
+    arr = np.zeros(weight.shape)
+    arr[-1] = weight[-1]
+    weights.append(arr)
 
     do_snr_vs_far = 1
     do_fake_roc = 1
