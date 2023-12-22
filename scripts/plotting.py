@@ -869,7 +869,7 @@ def main(args):
     do_train_signal_example_plots = 1
     do_anomaly_signal_show = 1
     do_learned_fm_weights = 1
-    do_make_roc_curves = 1
+    do_make_roc_curves = 0
 
     if do_snr_vs_far or do_make_roc_curves:
 
@@ -939,30 +939,30 @@ def main(args):
             #                     smoothing_window=SMOOTHING_KERNEL,
             #                     hrss=True)
 
-            # make the plot showing all the smoothing windows for a single class at once
-            for elem in X3:
-                make_roc_curves_smoothing_comparison(data_dict[elem],
-                                    snrs_dict[elem],
-                                    model,
-                                    far_hist,
-                                    elem,
-                                    args.plot_savedir,
-                                    f'ROC-plots_SNR_vary_smoothing_{elem}',
-                                    bias,
-                                    SMOOTHING_KERNEL_SIZES)
+            # # make the plot showing all the smoothing windows for a single class at once
+            # for elem in X3:
+            #     make_roc_curves_smoothing_comparison(data_dict[elem],
+            #                         snrs_dict[elem],
+            #                         model,
+            #                         far_hist,
+            #                         elem,
+            #                         args.plot_savedir,
+            #                         f'ROC-plots_SNR_vary_smoothing_{elem}',
+            #                         bias,
+            #                         SMOOTHING_KERNEL_SIZES)
 
 
-            # make the plot showing all the smoothing windows for a single class at once
-            for elem in X3:
-                make_roc_curves_smoothing_comparison(data_dict[elem],
-                                    snrs_dict[elem],
-                                    model,
-                                    far_hist,
-                                    elem,
-                                    args.plot_savedir,
-                                    f'ROC plots, SNR, vary smoothing, {elem}',
-                                    bias,
-                                    SMOOTHING_KERNEL_SIZES)
+            # # make the plot showing all the smoothing windows for a single class at once
+            # for elem in X3:
+            #     make_roc_curves_smoothing_comparison(data_dict[elem],
+            #                         snrs_dict[elem],
+            #                         model,
+            #                         far_hist,
+            #                         elem,
+            #                         args.plot_savedir,
+            #                         f'ROC plots, SNR, vary smoothing, {elem}',
+            #                         bias,
+            #                         SMOOTHING_KERNEL_SIZES)
                                     
 
 
