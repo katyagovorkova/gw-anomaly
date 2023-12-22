@@ -15,7 +15,7 @@ fm_training_classes = [
 wildcard_constraints:
     modelclass = '|'.join([x for x in modelclasses]),
 
-rule train_quak:
+rule train_gwak:
     params:
         data = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
                       dataclass='{dataclass}',
@@ -24,7 +24,7 @@ rule train_quak:
         model_file = 'output/{version}/trained/models/{dataclass}.pt'
     shell:
         'mkdir -p {params.savedir}; '
-        'python3 scripts/train_quak.py {params.data} {params.model_file} {params.savedir} '
+        'python3 scripts/train_gwak.py {params.data} {params.model_file} {params.savedir} '
 
 rule generate_timeslides_for_far:
     input:
@@ -58,7 +58,7 @@ rule evaluate_signals:
         source_file = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
                              dataclass='{signal_dataclass}',
                              version='{version}'),
-        model_path = expand(rules.train_quak.params.model_file,
+        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
                             dataclass=modelclasses,
                             version='{version}'),
     output:
@@ -83,7 +83,7 @@ rule plot_cut_efficiency:
 
 rule generate_timeslides_for_fm:
     params:
-        model_path = expand(rules.train_quak.params.model_file,
+        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
             dataclass=modelclasses,
             version=VERSION),
         data_path = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
@@ -127,10 +127,10 @@ rule recreation_and_quak_plots:
     input:
         fm_model_path = rules.train_final_metric.params.fm_model_path
     params:
-        models = expand(rules.train_quak.params.model_file,
+        models = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
                         dataclass=modelclasses,
                         version=VERSION),
-        test_path = expand(rules.upload_data.output,
+        test_path = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
                            dataclass='bbh',
                            version=VERSION),
         savedir = directory('output/{VERSION}/paper/')
@@ -150,7 +150,7 @@ rule compute_far:
             timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
             files_to_eval=-1),
     params:
-        model_path = expand(rules.train_quak.params.model_file,
+        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
             dataclass=modelclasses,
             version=VERSION),
         shorten_timeslides = False,
@@ -181,7 +181,7 @@ rule quak_plotting_prediction_and_recreation:
                            dataclass='{dataclass}',
                            version=VERSION)
     params:
-        model_path = expand(rules.train_quak.params.model_file,
+        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
                             dataclass=modelclasses,
                             version=VERSION),
         reduce_loss = False,
