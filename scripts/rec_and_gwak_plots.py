@@ -264,18 +264,20 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
 
         j = 0
-        if data_cleaned is not None:
-            axs[k].plot(ts, orig_samps[
-                        j, k, :], label='Signal + Noise, AE input', c='black', alpha=0.55, linewidth=1.3)
-        else:
-            # for glitch, bkg samples
-            axs[k].plot(ts, orig_samps[j, k, :],
-                        label='Signal + Noise, AE input', c='black')
-        if data_cleaned is not None:
-            axs[k].plot(ts, data_cleaned[j, k, :],
-                        label='Signal', c='sienna', linewidth=2)
         for l in range(len(CLASS_ORDER)):
             for k in range(NUM_IFOS):
+
+                if data_cleaned is not None:
+                    axs[k].plot(ts, orig_samps[
+                                j, k, :], label='Signal + Noise, AE input', c='black', alpha=0.55, linewidth=1.3)
+                else:
+                    # for glitch, bkg samples
+                    axs[k].plot(ts, orig_samps[j, k, :],
+                                label='Signal + Noise, AE input', c='black')
+                if data_cleaned is not None:
+                    axs[k].plot(ts, data_cleaned[j, k, :],
+                                label='Signal', c='sienna', linewidth=2)
+
 
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
