@@ -295,8 +295,8 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[k].set_xlabel('Time (ms)', fontsize=20)
 
                 plt.tight_layout()
-                fig.savefig(f'{savedir}/recreation_{class_name}_{l}_{k}.pdf', dpi=300)
-                plt.close()
+                fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
+                plt.clf()
 
 
 def main(args):
