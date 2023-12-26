@@ -192,8 +192,13 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
     # make the plot showing only original, recreated for that class
 
     if RECREATION_SAMPLES_PER_PLOT > 1:
+
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
+        if data_cleaned is not None:
+            axs[j, k].plot(ts, data_cleaned[j, k, :],
+                           label='Signal', c='pink')
+
         for j in range(RECREATION_SAMPLES_PER_PLOT):
             for k in range(NUM_IFOS):
                 mae = np.mean(
@@ -202,10 +207,6 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                                label='Signal + Noise', c='black')
                 axs[j, k].plot(ts, recreated_samps[j, i, k, :],
                     label=f'{class_name}, mae:{mae:.2f}', c=colors[i])
-
-                if data_cleaned is not None:
-                    axs[j, k].plot(ts, data_cleaned[j, k, :],
-                                   label='Signal', c='pink')
 
                 axs[j, k].grid()
                 axs[j, k].set_title(IFO_LABELS[k])
@@ -229,20 +230,21 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
     if RECREATION_SAMPLES_PER_PLOT > 1:
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-        for l, l_name in enumerate(['bbh', 'sglf', 'sghf']):
-            for j in range(RECREATION_SAMPLES_PER_PLOT):
-                for k in range(NUM_IFOS):
 
-                    axs[j, k].grid()
-                    axs[j, k].set_title(IFO_LABELS[k])
-                    axs[j, k].legend()
-                    if k == 0:
-                        axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
-                    axs[j, k].set_xlabel('Time (ms)')
+        for j in range(RECREATION_SAMPLES_PER_PLOT):
+            for k in range(NUM_IFOS):
 
-                    axs[j, k].plot(ts, orig_samps[j, k, :],
-                                   label='Signal + Noise', c='black', alpha=0.55)
+                axs[j, k].grid()
+                axs[j, k].set_title(IFO_LABELS[k])
+                axs[j, k].legend()
+                if k == 0:
+                    axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
+                axs[j, k].set_xlabel('Time (ms)')
 
+                axs[j, k].plot(ts, orig_samps[j, k, :],
+                               label='Signal + Noise', c='black', alpha=0.55)
+
+                for l, l_name in enumerate(['bbh', 'sglf', 'sghf']):
                     mae = np.mean(
                         np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                     alpha = 1
@@ -261,20 +263,19 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
 
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-        for l, l_name in enumerate(['background', 'glitches']):
-            for j in range(RECREATION_SAMPLES_PER_PLOT):
-                for k in range(NUM_IFOS):
+        for j in range(RECREATION_SAMPLES_PER_PLOT):
+            for k in range(NUM_IFOS):
+                axs[j, k].grid()
+                axs[j, k].set_title(IFO_LABELS[k])
+                axs[j, k].legend()
+                if k == 0:
+                    axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
+                axs[j, k].set_xlabel('Time (ms)')
 
-                    axs[j, k].grid()
-                    axs[j, k].set_title(IFO_LABELS[k])
-                    axs[j, k].legend()
-                    if k == 0:
-                        axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
-                    axs[j, k].set_xlabel('Time (ms)')
+                axs[j, k].plot(ts, orig_samps[j, k, :],
+                               label='Signal + Noise', c='black', alpha=0.55)
 
-                    axs[j, k].plot(ts, orig_samps[j, k, :],
-                                   label='Signal + Noise', c='black', alpha=0.55)
-
+                for l, l_name in enumerate(['background', 'glitches']):
                     mae = np.mean(
                         np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                     alpha = 1
@@ -295,21 +296,21 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         j = 0
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-        for l, l_name in enumerate(['bbh', 'sglf', 'sghf']):
-            for k in range(NUM_IFOS):
+        for k in range(NUM_IFOS):
 
-                if data_cleaned is not None:
-                    axs[k].plot(ts, orig_samps[
-                                j, k, :], label='Signal + Noise, AE input', c='black',
-                                alpha=0.55)
-                else:
-                    # for glitch, bkg samples
-                    axs[k].plot(ts, orig_samps[j, k, :],
-                                label='Signal + Noise, AE input', c='black', alpha=0.55)
-                if data_cleaned is not None:
-                    axs[k].plot(ts, data_cleaned[j, k, :],
-                                label='Signal', c='pink')
+            if data_cleaned is not None:
+                axs[k].plot(ts, orig_samps[
+                            j, k, :], label='Signal + Noise, AE input', c='black',
+                            alpha=0.55)
+            else:
+                # for glitch, bkg samples
+                axs[k].plot(ts, orig_samps[j, k, :],
+                            label='Signal + Noise, AE input', c='black', alpha=0.55)
+            if data_cleaned is not None:
+                axs[k].plot(ts, data_cleaned[j, k, :],
+                            label='Signal', c='pink')
 
+            for l, l_name in enumerate(['bbh', 'sglf', 'sghf']):
 
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
@@ -335,21 +336,22 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
 
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
                 RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-        for l, l_name in enumerate(['background', 'glitches']):
-            for k in range(NUM_IFOS):
 
-                if data_cleaned is not None:
-                    axs[k].plot(ts, orig_samps[
-                                j, k, :], label='Signal + Noise, AE input',
-                                c='black', alpha=0.55)
-                else:
-                    # for glitch, bkg samples
-                    axs[k].plot(ts, orig_samps[j, k, :],
-                                label='Signal + Noise, AE input', c='black', alpha=0.55,)
-                if data_cleaned is not None:
-                    axs[k].plot(ts, data_cleaned[j, k, :],
-                                label='Signal', c='pink')
+        for k in range(NUM_IFOS):
 
+            if data_cleaned is not None:
+                axs[k].plot(ts, orig_samps[
+                            j, k, :], label='Signal + Noise, AE input',
+                            c='black', alpha=0.55)
+            else:
+                # for glitch, bkg samples
+                axs[k].plot(ts, orig_samps[j, k, :],
+                            label='Signal + Noise, AE input', c='black', alpha=0.55,)
+            if data_cleaned is not None:
+                axs[k].plot(ts, data_cleaned[j, k, :],
+                            label='Signal', c='pink')
+
+            for l, l_name in enumerate(['background', 'glitches']):
 
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
