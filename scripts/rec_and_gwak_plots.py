@@ -264,18 +264,19 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
 
         j = 0
-        for k in range(NUM_IFOS):
-            if data_cleaned is not None:
-                axs[k].plot(ts, orig_samps[
-                            j, k, :], label='Signal + Noise, AE input', c='black', alpha=0.55, linewidth=1.3)
-            else:
-                # for glitch, bkg samples
-                axs[k].plot(ts, orig_samps[j, k, :],
-                            label='Signal + Noise, AE input', c='black')
-            if data_cleaned is not None:
-                axs[k].plot(ts, data_cleaned[j, k, :],
-                            label='Signal', c='sienna', linewidth=2)
-            for l in range(len(CLASS_ORDER)):
+        if data_cleaned is not None:
+            axs[k].plot(ts, orig_samps[
+                        j, k, :], label='Signal + Noise, AE input', c='black', alpha=0.55, linewidth=1.3)
+        else:
+            # for glitch, bkg samples
+            axs[k].plot(ts, orig_samps[j, k, :],
+                        label='Signal + Noise, AE input', c='black')
+        if data_cleaned is not None:
+            axs[k].plot(ts, data_cleaned[j, k, :],
+                        label='Signal', c='sienna', linewidth=2)
+        for l in range(len(CLASS_ORDER)):
+            for k in range(NUM_IFOS):
+
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                 alpha = 1
@@ -294,9 +295,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[k].grid()
                 axs[k].set_xlabel('Time (ms)', fontsize=20)
 
-                plt.tight_layout()
-                fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
-                plt.clf()
+            plt.tight_layout()
+            fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
+            plt.clf()
 
 
 def main(args):
@@ -372,37 +373,37 @@ def main(args):
                                 f'{args.savedir}/{class_label}/',
                                 class_label)
 
-    SNR_ind = 4
-    corner_plot_data = [0] * len(CLASS_ORDER)
+    # SNR_ind = 4
+    # corner_plot_data = [0] * len(CLASS_ORDER)
 
-    for class_label in CLASS_ORDER:
-        class_index = CLASS_ORDER.index(class_label)
-        if class_label in ['sghf', 'sglf', 'bbh']:
-            corner_plot_data[class_index] = loss_values_SNR[
-                class_label][SNR_ind]
+    # for class_label in CLASS_ORDER:
+    #     class_index = CLASS_ORDER.index(class_label)
+    #     if class_label in ['sghf', 'sglf', 'bbh']:
+    #         corner_plot_data[class_index] = loss_values_SNR[
+    #             class_label][SNR_ind]
 
-        else:
-            assert class_label in ['glitches', 'background']
-            corner_plot_data[class_index] = loss_values[class_label]
-        corner_plot_data[class_index] = stack_dict_into_tensor(
-            corner_plot_data[class_index]).cpu().numpy()  # [p]#[:, ]
-        means, stds_ = np.load(
-            'output/trained/norm_factor_params.npy')
-        corner_plot_data[class_index] = np.delete(corner_plot_data[class_index], FACTORS_NOT_USED_FOR_FM, -1)
-        corner_plot_data[class_index] = (
-            corner_plot_data[class_index] - means[:-1]) / stds_[:-1]
-        all_dotted = np.zeros(
-            (len(corner_plot_data[class_index]), len(CLASS_ORDER)))
-        for i in range(len(CLASS_ORDER)):
-            dotted = np.dot(corner_plot_data[class_index], weights[i])
-            all_dotted[:, i] = dotted
-        corner_plot_data[class_index] = all_dotted
-        corner_plot_data[class_index] = corner_plot_data[class_index][
-            np.random.permutation(len(corner_plot_data[class_index]))]
-        print(corner_plot_data[class_index].shape)
-    print(corner_plot_data)
-    print('class order', CLASS_ORDER)
-    corner_plotting(corner_plot_data, CLASS_ORDER, f'{args.savedir}', SNR_ind=SNR_ind, loglog=False, enforce_lim=False)
+    #     else:
+    #         assert class_label in ['glitches', 'background']
+    #         corner_plot_data[class_index] = loss_values[class_label]
+    #     corner_plot_data[class_index] = stack_dict_into_tensor(
+    #         corner_plot_data[class_index]).cpu().numpy()  # [p]#[:, ]
+    #     means, stds_ = np.load(
+    #         'output/trained/norm_factor_params.npy')
+    #     corner_plot_data[class_index] = np.delete(corner_plot_data[class_index], FACTORS_NOT_USED_FOR_FM, -1)
+    #     corner_plot_data[class_index] = (
+    #         corner_plot_data[class_index] - means[:-1]) / stds_[:-1]
+    #     all_dotted = np.zeros(
+    #         (len(corner_plot_data[class_index]), len(CLASS_ORDER)))
+    #     for i in range(len(CLASS_ORDER)):
+    #         dotted = np.dot(corner_plot_data[class_index], weights[i])
+    #         all_dotted[:, i] = dotted
+    #     corner_plot_data[class_index] = all_dotted
+    #     corner_plot_data[class_index] = corner_plot_data[class_index][
+    #         np.random.permutation(len(corner_plot_data[class_index]))]
+    #     print(corner_plot_data[class_index].shape)
+    # print(corner_plot_data)
+    # print('class order', CLASS_ORDER)
+    # corner_plotting(corner_plot_data, CLASS_ORDER, f'{args.savedir}', SNR_ind=SNR_ind, loglog=False, enforce_lim=False)
 
 
 if __name__ == '__main__':
