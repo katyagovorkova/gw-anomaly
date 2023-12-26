@@ -133,10 +133,10 @@ rule recreation_and_quak_plots:
         test_path = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
                            dataclass='bbh',
                            version=VERSION),
-        savedir = directory('output/{VERSION}/paper/')
+        savedir = f'output/{VERSION}/paper/'
     shell:
         'mkdir -p {params.savedir}; '
-        'python3 scripts/rec_and_quak_plots.py {params.test_path} {params.models} \
+        'python3 scripts/rec_and_gwak_plots.py {params.test_path} {params.models} \
             {input.fm_model_path} {params.savedir}'
 
 rule compute_far:
