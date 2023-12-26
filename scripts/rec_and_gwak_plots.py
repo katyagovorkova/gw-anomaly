@@ -229,8 +229,8 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
 
-        for j in range(RECREATION_SAMPLES_PER_PLOT):
-            for l in range(len(CLASS_ORDER)):
+        for l in range(len(CLASS_ORDER)):
+            for j in range(RECREATION_SAMPLES_PER_PLOT):
                 for k in range(NUM_IFOS):
 
                     axs[j, k].grid()
@@ -254,9 +254,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                         axs[j, k].plot(ts, data_cleaned[j, k, :],
                                        label='Signal', c='pink', alpha=0.8)
 
-                plt.tight_layout()
-                fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
-                plt.close()
+            plt.tight_layout()
+            fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
+            plt.close()
 
 
     else:
