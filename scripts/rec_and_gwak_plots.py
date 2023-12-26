@@ -226,10 +226,10 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         'sghf': 'SG 512-1024 Hz'
     }
     if RECREATION_SAMPLES_PER_PLOT > 1:
+        for l in range(len(CLASS_ORDER)):
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
 
-        for l in range(len(CLASS_ORDER)):
             for j in range(RECREATION_SAMPLES_PER_PLOT):
                 for k in range(NUM_IFOS):
 
@@ -256,15 +256,13 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
 
             plt.tight_layout()
             fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
-            plt.close()
-
 
     else:
-        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
-            RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-
         j = 0
         for l in range(len(CLASS_ORDER)):
+            fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+                RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
+
             for k in range(NUM_IFOS):
 
                 if data_cleaned is not None:
@@ -276,7 +274,7 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                                 label='Signal + Noise, AE input', c='black')
                 if data_cleaned is not None:
                     axs[k].plot(ts, data_cleaned[j, k, :],
-                                label='Signal', c='sienna', linewidth=2)
+                                label='Signal', c='limegreen', linewidth=2)
 
 
                 mae = np.mean(
@@ -299,8 +297,6 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
 
             plt.tight_layout()
             fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
-            plt.clf()
-
 
 def main(args):
 
