@@ -253,7 +253,7 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                         alpha = 0.5
                     axs[j, k].plot(ts, recreated_samps[j, l, k, :],
                         label=f'{rename_map[l_name]}, mae: {mae:.2f}',
-                        c=colors[l])
+                        c=l_color)
 
                     if data_cleaned is not None:
                         axs[j, k].plot(ts, data_cleaned[j, k, :],
@@ -322,7 +322,7 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                     alpha = 0.75
                     linewidth = 1.45
                 axs[k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[l_name]}, mae: {mae:.2f}',
-                    c=colors[l])
+                    c=l_color)
 
                 axs[k].grid()
                 axs[k].set_title(IFO_LABELS[k], fontsize=20)
