@@ -226,10 +226,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         'sghf': 'SG 512-1024 Hz'
     }
     if RECREATION_SAMPLES_PER_PLOT > 1:
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+            RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
         for l, l_name in enumerate(['bbh', 'sglf', 'sghf']):
-            fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
-                RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-
             for j in range(RECREATION_SAMPLES_PER_PLOT):
                 for k in range(NUM_IFOS):
 
@@ -257,10 +256,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         plt.tight_layout()
         fig.savefig(f'{savedir}/recreation_{class_name}_sig.pdf', dpi=300)
 
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+            RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
         for l, l_name in enumerate(['background', 'glitches', ]):
-            fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
-                RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-
             for j in range(RECREATION_SAMPLES_PER_PLOT):
                 for k in range(NUM_IFOS):
 
@@ -290,10 +288,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
 
     else:
         j = 0
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+            RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
         for l, l_name in enumerate(['background', 'bbh', 'glitches', 'sglf', 'sghf']):
-            fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
-                RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-
             for k in range(NUM_IFOS):
 
                 if data_cleaned is not None:
@@ -329,10 +326,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         plt.tight_layout()
         fig.savefig(f'{savedir}/recreation_{class_name}_sig.pdf', dpi=300)
 
-        for l, l_name in enumerate(['background', 'glitches']):
-            fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
                 RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
-
+        for l, l_name in enumerate(['background', 'glitches']):
             for k in range(NUM_IFOS):
 
                 if data_cleaned is not None:
