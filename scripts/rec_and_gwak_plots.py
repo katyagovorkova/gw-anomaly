@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 import scipy.stats as st
 import torch
 
-from gwak_predict import quak_eval
+from gwak_predict import quak_eval as gwak_eval
 from models import LinearModel
 from helper_functions import stack_dict_into_tensor
 
