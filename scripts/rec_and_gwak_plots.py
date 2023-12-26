@@ -243,16 +243,16 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                     axs[j, k].plot(ts, orig_samps[j, k, :],
                                    label='Signal + Noise', c='black')
 
-                        mae = np.mean(
-                            np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
-                        alpha = 1
-                        if CLASS_ORDER[l] != class_name:
-                            alpha = 0.5
-                        axs[j, k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha)
+                    mae = np.mean(
+                        np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
+                    alpha = 1
+                    if CLASS_ORDER[l] != class_name:
+                        alpha = 0.5
+                    axs[j, k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha)
 
-                        if data_cleaned is not None:
-                            axs[j, k].plot(ts, data_cleaned[j, k, :],
-                                           label='Signal', c='pink', alpha=0.8)
+                    if data_cleaned is not None:
+                        axs[j, k].plot(ts, data_cleaned[j, k, :],
+                                       label='Signal', c='pink', alpha=0.8)
 
                 plt.tight_layout()
                 fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
