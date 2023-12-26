@@ -230,32 +230,33 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
 
         for j in range(RECREATION_SAMPLES_PER_PLOT):
-            for k in range(NUM_IFOS):
+            for l in range(len(CLASS_ORDER)):
+                for k in range(NUM_IFOS):
 
-                axs[j, k].grid()
-                axs[j, k].set_title(IFO_LABELS[k])
-                axs[j, k].legend()
-                if k == 0:
-                    axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
-                axs[j, k].set_xlabel('Time (ms)')
+                    axs[j, k].grid()
+                    axs[j, k].set_title(IFO_LABELS[k])
+                    axs[j, k].legend()
+                    if k == 0:
+                        axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
+                    axs[j, k].set_xlabel('Time (ms)')
 
-                axs[j, k].plot(ts, orig_samps[j, k, :],
-                               label='Signal + Noise', c='black')
-                for l in range(len(CLASS_ORDER)):
-                    mae = np.mean(
-                        np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
-                    alpha = 1
-                    if CLASS_ORDER[l] != class_name:
-                        alpha = 0.5
-                    axs[j, k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha)
+                    axs[j, k].plot(ts, orig_samps[j, k, :],
+                                   label='Signal + Noise', c='black')
 
-                    if data_cleaned is not None:
-                        axs[j, k].plot(ts, data_cleaned[j, k, :],
-                                       label='Signal', c='pink', alpha=0.8)
+                        mae = np.mean(
+                            np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
+                        alpha = 1
+                        if CLASS_ORDER[l] != class_name:
+                            alpha = 0.5
+                        axs[j, k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha)
 
-                    plt.tight_layout()
-                    fig.savefig(f'{savedir}/recreation_{class_name}_{l}_{k}.pdf', dpi=300)
-                    plt.close()
+                        if data_cleaned is not None:
+                            axs[j, k].plot(ts, data_cleaned[j, k, :],
+                                           label='Signal', c='pink', alpha=0.8)
+
+                plt.tight_layout()
+                fig.savefig(f'{savedir}/recreation_{class_name}_{l}.pdf', dpi=300)
+                plt.close()
 
 
     else:
