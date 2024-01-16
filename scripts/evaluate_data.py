@@ -15,7 +15,9 @@ from helper_functions import (
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-sys.path.append('/n/home00/emoreno/gw-anomaly/ml4gw')
+
+#append relative path of ml4gw to path
+sys.path.append('../ml4gw')
 from ml4gw.transforms import SpectralDensity, Whiten
 from ml4gw.utils.slicing import unfold_windows
 
@@ -28,15 +30,13 @@ from config import (
     RETURN_INDIV_LOSSES,
     SCALE,
     SAMPLE_RATE,
-    BATCH_SIZE,
+    PSD_LENGTH,
+    FDURATION,
     SEG_NUM_TIMESTEPS,
     BANDPASS_LOW, 
     NUM_IFOS
 )
 
-PSD_LENGTH = 64
-FDURATION = 2
-BATCH_SIZE = 2048
 WINDOW_LENGTH = SEG_NUM_TIMESTEPS / SAMPLE_RATE
 STRIDE = (SEG_NUM_TIMESTEPS - SEGMENT_OVERLAP) / SAMPLE_RATE
 

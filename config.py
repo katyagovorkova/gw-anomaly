@@ -82,8 +82,8 @@ LOSS = 'MAE'
 OPTIMIZER = 'Adam'
 VALIDATION_SPLIT = 0.15
 TRAINING_VERBOSE = True
-#CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf']
-CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf', 'pearson']
+CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf']
+#CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf', 'pearson']
 LIMIT_TRAINING_DATA = None
 CURRICULUM_SNRS = [256, 128, 64, 32, 16]
 
@@ -180,3 +180,8 @@ SUPERVISED_EPOCHS = 100
 SUPERVISED_VALIDATION_SPLIT = 0.15
 SUPERVISED_FAR_TIMESLIDE_LEN = 24*3600
 SUPERVISED_SMOOTHING_KERNEL = 50
+
+# PSD local whitening parameters
+PSD_LENGTH = 64
+FDURATION = 2
+PSD_BATCH_SIZE = 4096*4

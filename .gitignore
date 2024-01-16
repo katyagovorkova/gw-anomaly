@@ -8,3 +8,4 @@ tmp/*
 *._*.py
 *._*.pdf
 *.pt
+/data/

@@ -12,11 +12,14 @@
 # module load cuda/12.2
 # module load python/3.9.0
 
-# Activate conda environment
-source /n/home00/emoreno/miniconda3/bin/activate /n/home00/emoreno/miniconda3/envs/gwak
+# Define the common directory path as a variable
+HOME_DIR="/n/home00/emoreno"
+
+# Activate the conda environment
+source "${HOME_DIR}/miniconda3/bin/activate" "${HOME_DIR}/miniconda3/envs/gwak"
 
 # Change directory
-cd /n/home00/emoreno/gw-anomaly/
+cd "${HOME_DIR}/gw-anomaly/"
 mkdir -p output/logs
 
 eval $(python export_variables.py)

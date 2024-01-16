@@ -8,11 +8,14 @@ from helper_functions import mae_torch, freq_loss_torch
 from models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT
 import h5py
 import sys
-sys.path.append('/n/home00/emoreno/gw-anomaly/ml4gw')
-from ml4gw.transforms import ShiftedPearsonCorrelation
+sys.path.append('./ml4gw')
+sys.path.append('./gw-anomaly')
 
 sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+    os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+from ml4gw.transforms import ShiftedPearsonCorrelation
+
 from config import (NUM_IFOS,
                     SEG_NUM_TIMESTEPS,
                     BOTTLENECK,
@@ -22,12 +25,13 @@ from config import (NUM_IFOS,
                     RECREATION_LIMIT,
                     SAMPLE_RATE,
                     BATCH_SIZE,
+                    PSD_BATCH_SIZE,
                     SEG_NUM_TIMESTEPS,
                     SEGMENT_OVERLAP)
 
 STRIDE = (SEG_NUM_TIMESTEPS - SEGMENT_OVERLAP) / SAMPLE_RATE
 
-def data_iterator(dataset: h5py.Dataset, shifts: list[float], batch_size: int = BATCH_SIZE):
+def data_iterator(dataset: h5py.Dataset, shifts: list[float], batch_size: int = PSD_BATCH_SIZE):
     shift_sizes = [int(i * SAMPLE_RATE) for i in shifts]
     num_channels, size = dataset.shape
 
@@ -76,9 +80,9 @@ def quak_eval_snapshotter(data, models, batcher, device, SHIFT):
                 predictions[name].append(loss)
             # compute the pearson correlation between
             # both interferometer channels
-            corr = pearson(X[:, :1], X[:, 1:])
-            corr = corr.max(dim=0).values[:, 0]
-            predictions["pearson"].append(corr)
+            #corr = pearson(X[:, :1], X[:, 1:])
+            #corr = corr.max(dim=0).values[:, 0]
+            #predictions["pearson"].append(corr)
 
             num_preds += len(X)
 

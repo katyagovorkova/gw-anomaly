@@ -18,7 +18,7 @@ do
   ((counter++))
 
   # Break the loop if the counter reaches 2
-  if [ $counter -eq 800 ]; then
+  if [ $counter -eq 2 ]; then
     break
   fi
 done

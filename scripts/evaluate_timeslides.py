@@ -194,7 +194,6 @@ def main(args):
         final_values, midpoints = full_evaluation(
                 timeslide[None, :, :], args.model_path, DEVICE, 
                 return_midpoints=True, loaded_models=gwak_models, selection=None)
-                #selection=selection)
         if 0:
             means, stds = torch.mean(
                 final_values, axis=-2), torch.std(final_values, axis=-2)
@@ -207,7 +206,7 @@ def main(args):
         save_full_timeslide_readout = True
         if save_full_timeslide_readout:
 
-            FAR_2days = 10000 # lowest FAR bin we want to worry about
+            FAR_2days = -1.6 # lowest FAR bin we want to worry about
 
             # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
             final_values_slx = (final_values - mean_norm)/std_norm

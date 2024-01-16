@@ -162,23 +162,24 @@ def main(args):
 
     # build number of shifts
     SHIFT = [[0, 0.05]]
-    n_timeslides = 50
+    n_timeslides = 69
 
     for n in range(n_timeslides):
+        SHIFT.append([SHIFT[-1][-1] + SEGMENT_OVERLAP/SAMPLE_RATE, 0])
         SHIFT.append([0, SHIFT[-1][-1] + SEGMENT_OVERLAP/SAMPLE_RATE])
 
     print("Shifts: ", SHIFT)
     
     array_final_vals = []
     with torch.no_grad(), h5py.File(args.data_path, "r") as timeslide:
-        for shift in SHIFT: 
+        for shift in tqdm(SHIFT): 
             final_values = full_evaluation_snapshotter(
                     timeslide, gwak_models, DEVICE, shift,
                     return_midpoints=True)
-                    #selection=selection)
             array_final_vals.append(final_values)
     
     final_values = torch.cat(array_final_vals, dim=0)
+    print("final_values", final_values.shape)
     save_full_timeslide_readout = True
     if save_full_timeslide_readout:
 
