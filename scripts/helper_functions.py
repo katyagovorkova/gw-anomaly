@@ -12,7 +12,7 @@ from lalinference import BurstSineGaussian, BurstSineGaussianF
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from models import LSTM_AE_SPLIT, FAT, LinearModel, LSTM_AE_SPLIT_use_precomputed
+from models import LSTM_AE_SPLIT, FAT, LinearModel
 
 from config import (
     IFOS,
@@ -177,20 +177,14 @@ def stack_dict_into_numpy_segments(data_dict):
     return stacked_np
 
 
-def load_gwak_models(model_path, device, device_name, load_precomputed_RNN=False, batch_size=None):
+def load_gwak_models(model_path, device, device_name):
     loaded_models = {}
     for dpath in model_path:
         model_name = dpath.split("/")[-1].split(".")[0]
         if MODEL[model_name] == "lstm":
-            if load_precomputed_RNN:
-                model = LSTM_AE_SPLIT_use_precomputed(num_ifos=NUM_IFOS,
+            model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
                                 num_timesteps=SEG_NUM_TIMESTEPS,
-                                BOTTLENECK=BOTTLENECK[model_name], batch_size=batch_size).to(device)
-            else:  
-                model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
-                                    num_timesteps=SEG_NUM_TIMESTEPS,
-                                    BOTTLENECK=BOTTLENECK[model_name]).to(device)
-                
+                                BOTTLENECK=BOTTLENECK[model_name]).to(device)
         elif MODEL[model_name] == "dense":
             model = FAT(num_ifos=NUM_IFOS,
                         num_timesteps=SEG_NUM_TIMESTEPS,
