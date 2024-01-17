@@ -12,7 +12,7 @@ from lalinference import BurstSineGaussian, BurstSineGaussianF
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from models import LSTM_AE_SPLIT, FAT
+from models import LSTM_AE_SPLIT, FAT, LinearModel, LSTM_AE_SPLIT_use_precomputed
 
 from config import (
     IFOS,
@@ -39,7 +39,9 @@ from config import (
     RETURN_INDIV_LOSSES,
     SCALE,
     MODEL,
-    BOTTLENECK)
+    BOTTLENECK, 
+    FACTORS_NOT_USED_FOR_FM,
+    SMOOTHING_KERNEL)
 
 
 def mae(a, b):
@@ -68,9 +70,10 @@ def freq_loss_torch(a, b):
     a2b = torch.abs(torch.linalg.vecdot(a_, b_, axis=-1))
     a2a = torch.abs(torch.linalg.vecdot(
         a_[:, 0, :], a_[:, 1, :], axis=-1))[:, None]
-    b2b = torch.abs(torch.linalg.vecdot(
-        b_[:, 0, :], b_[:, 1, :], axis=-1))[:, None]
-    return torch.hstack([a2b, a2a, b2b])
+    # b2b = torch.abs(torch.linalg.vecdot(
+    #     b_[:, 0, :], b_[:, 1, :], axis=-1))[:, None]
+    # return torch.hstack([a2b, a2a, b2b])
+    return torch.hstack([a2b, a2a])
 
 
 def mae_torch_coherent(a, b):
@@ -174,20 +177,26 @@ def stack_dict_into_numpy_segments(data_dict):
     return stacked_np
 
 
-def load_gwak_models(model_path, device):
+def load_gwak_models(model_path, device, device_name, load_precomputed_RNN=False, batch_size=None):
     loaded_models = {}
     for dpath in model_path:
         model_name = dpath.split("/")[-1].split(".")[0]
         if MODEL[model_name] == "lstm":
-            model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+            if load_precomputed_RNN:
+                model = LSTM_AE_SPLIT_use_precomputed(num_ifos=NUM_IFOS,
                                 num_timesteps=SEG_NUM_TIMESTEPS,
-                                BOTTLENECK=BOTTLENECK[model_name]).to(device)
+                                BOTTLENECK=BOTTLENECK[model_name], batch_size=batch_size).to(device)
+            else:  
+                model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+                                    num_timesteps=SEG_NUM_TIMESTEPS,
+                                    BOTTLENECK=BOTTLENECK[model_name]).to(device)
+                
         elif MODEL[model_name] == "dense":
             model = FAT(num_ifos=NUM_IFOS,
                         num_timesteps=SEG_NUM_TIMESTEPS,
                         BOTTLENECK=BOTTLENECK[model_name]).to(device)
 
-        model.load_state_dict(torch.load(dpath, map_location=GPU_NAME))
+        model.load_state_dict(torch.load(dpath, map_location=device_name))
         loaded_models[dpath] = model
 
     return loaded_models 
@@ -1153,3 +1162,54 @@ def far_to_metric(search_time, far_hist):
         i += 1
 
     return i * HISTOGRAM_BIN_DIVISION - HISTOGRAM_BIN_MIN
+
+def process_linear_fm(data, fm_model_path, norm_factors_path, DEVICE):
+    model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+    model.load_state_dict(torch.load(
+        fm_model_path, map_location=GPU_NAME))
+    weight = (model.layer.weight.data.cpu().numpy()[0])
+    #learned_dp_weights = weight[:]
+    
+
+    """
+        Factors to keep for the FM
+        0 - background AE (L_O * L_R)
+        1 - background AE (H_O * H_R)
+        2 - background AE (L_O * H_O)
+        3 - BBH AE (L_O * L_R)
+        4 - BBH AE (H_O * H_R)
+        5 - BBH AE (L_O * H_O)
+        6 - Glitches AE (L_O * L_R)
+        7 - Glitches AE (H_O * H_R)
+        8 - Glitches AE (L_O * H_O)
+        9 - SGLF AE (L_O * L_R)
+        10 - SGLF AE (H_O * H_R)
+        11 - SGLF AE (L_O * H_O)
+        12 - SGHF AE (L_O * L_R)
+        13 - SGHF AE (H_O * H_R)
+        14 - SGHF AE (L_O * H_O)
+        15 - Pearson
+    """
+
+    bias = model.layer.bias.data.cpu().numpy()[0]
+    means, stds = np.load(norm_factors_path)
+    data_ = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
+    
+
+    # smooth the data values
+    data_ = np.apply_along_axis(lambda m: np.convolve(m, 
+        np.ones(int(SMOOTHING_KERNEL * 5/SEGMENT_OVERLAP))/int((SMOOTHING_KERNEL*5/SEGMENT_OVERLAP)), mode='same'),
+            axis=-2,
+            arr=data_)
+    
+    data_unscaled = data_[:]
+    
+    data_ = (data_ - means) / stds
+
+    fm_vals = model(torch.from_numpy(
+                data_).float().to(DEVICE)).detach().cpu().numpy()
+
+    scaled_data = np.multiply(data_, weight)
+
+    return scaled_data, data_unscaled, fm_vals, [weight, bias] 
+

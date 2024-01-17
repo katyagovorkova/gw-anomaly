@@ -34,12 +34,14 @@ def main(hanford_path, livingston_path, save_path, period):
             intersection = intersect(h_elem, l_elem)
             if intersection is not None:
                 valid_segments.append(intersection)
-
     if period == 'O3a':
         np.save(save_path, np.array(valid_segments))
     elif period == 'O3b':
         np.save(save_path, np.array(valid_segments[0]))
 
 
-
 main(snakemake.input[0], snakemake.input[1], snakemake.output[0], snakemake.wildcards['period'])
+#main("/home/ryan.raikman/s22/forks/gw-anomaly/data/O3a_Hanford_segments.json",
+#     "/home/ryan.raikman/s22/forks/gw-anomaly/data/O3a_Livingston_segments.json",
+#     'output/O3a_intersections.npy',
+#     "O3a")

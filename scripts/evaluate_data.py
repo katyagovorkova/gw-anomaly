@@ -2,6 +2,7 @@ import os
 import argparse
 import numpy as np
 import torch
+import time
 
 from quak_predict import quak_eval
 from helper_functions import (
@@ -20,27 +21,39 @@ from config import (
     DATA_EVAL_MAX_BATCH,
     SEG_NUM_TIMESTEPS,
     RETURN_INDIV_LOSSES,
-    SCALE
+    SCALE,
+    PEARSON_FLAG
 )
 
 
-def full_evaluation(data, model_folder_path, device, return_midpoints=False, loaded_models=None):
+def full_evaluation(data, model_folder_path, device, return_midpoints=False, 
+                    loaded_models=None, selection=None, grad_flag=True,
+                    already_split=False, precomputed_rnn=None, batch_size=None, do_rnn_precomp=False):
     '''
     Passed in data is of shape (N_samples, 2, time_axis)
     '''
-    if not torch.is_tensor(data):
-        data = torch.from_numpy(data).to(device)
+    #t33 = time.time()
+    
+    if not already_split:
+        if not torch.is_tensor(data):
+            data = torch.from_numpy(data).to(device)
+        assert data.shape[1] == 2
+        clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
+        data = data[:, :, :clipped_time_axis]
 
-    assert data.shape[1] == 2
+        segments = split_into_segments_torch(data, device=device)
+        #print("Slicing data time, ", time.time()-t33)
+        segments_normalized = std_normalizer_torch(segments)
+        
+    else:
+        segments_normalized = data
 
-    clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
-    data = data[:, :, :clipped_time_axis]
+    slice_midpoints = np.arange(SEG_NUM_TIMESTEPS // 2, segments_normalized.shape[1] * (  #if something fails, segments normalized has 
+        SEGMENT_OVERLAP) + SEG_NUM_TIMESTEPS // 2, SEGMENT_OVERLAP)                         # a different shape
 
-    segments = split_into_segments_torch(data, device=device)
-    slice_midpoints = np.arange(SEG_NUM_TIMESTEPS // 2, segments.shape[1] * (
-        SEGMENT_OVERLAP) + SEG_NUM_TIMESTEPS // 2, SEGMENT_OVERLAP)
-
-    segments_normalized = std_normalizer_torch(segments)
+    if selection is not None:
+        segments = segments[:, selection]
+        slice_midpoints = slice_midpoints[selection.cpu().numpy()]
 
     # segments_normalized at this point is (N_batches, N_samples, 2, 100) and
     # must be reshaped into (N_batches * N_samples, 2, 100) to work with
@@ -49,10 +62,20 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
         0], segments_normalized.shape[1]
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
+    
+    #print("59 evaluate data grad_flag:", grad_flag)
+    #t61 = time.time()
     quak_predictions_dict = quak_eval(
-        segments_normalized, model_folder_path, device, loadd_models=loaded_models)
-    quak_predictions = stack_dict_into_tensor(
+        segments_normalized, model_folder_path, device, loaded_models=loaded_models, 
+        grad_flag = grad_flag, precomputed_rnn=precomputed_rnn, batch_size=batch_size, do_rnn_precomp=do_rnn_precomp)
+    if do_rnn_precomp:
+        return quak_predictions_dict
+    
+    #print("quak eval time", time.time()-t61, quak_predictions_dict[list(quak_predictions_dict.keys())[0]][0][0])
+    #t65 = time.time()
+    quak_predictions = stack_dict_into_tensor(  
         quak_predictions_dict, device=device)
+    #print("stacking time,", time.time()-t65)
 
     if RETURN_INDIV_LOSSES:
         quak_predictions = torch.reshape(
@@ -60,18 +83,35 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
     else:
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
+    if PEARSON_FLAG:
+        pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
+        
+        # may need to manually override this
+        pearson_values = pearson_values[:, :, None]
+        if edge_end-edge_start > 0:
+            disparity = quak_predictions.shape[1] - pearson_values.shape[1]
+            edge_start = disparity//2
+            edge_end = -disparity//2
 
-    pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
+        if edge_end != 0:
+            quak_predictions = quak_predictions[:, edge_start:edge_end, :]
+            slice_midpoints = slice_midpoints[edge_start:edge_end]
+        else:
+            quak_predictions = quak_predictions[:, edge_start:, :]
+            slice_midpoints = slice_midpoints[edge_start:]
+        if selection != None:
+            final_values = torch.cat([quak_predictions, pearson_values[:, selection]], dim=-1)
+        else:
+            final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
 
-    pearson_values = pearson_values[:, :, None]
-    quak_predictions = quak_predictions[:, edge_start:edge_end, :]
-    slice_midpoints = slice_midpoints[edge_start:edge_end]
-    final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
-
-    if return_midpoints:
-        return final_values, slice_midpoints
-    return final_values
-
+        if return_midpoints:
+            return final_values, slice_midpoints
+        return final_values
+    
+    else:
+        if return_midpoints:
+            return quak_predictions, slice_midpoints
+        return quak_predictions
 
 def main(args):
     DEVICE = torch.device(GPU_NAME)
