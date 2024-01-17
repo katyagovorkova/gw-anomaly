@@ -264,77 +264,11 @@ class Encoder_SPLIT(nn.Module):
         x = F.tanh(self.linear1(x))
         x = F.tanh(self.linear2(x))
         x = torch.cat([x, other_dat], axis=1)
+        #print("216", x.shape)
         x = F.tanh(self.linear3(x))
 
         return x.reshape((batch_size, self.embedding_dim))  # phil harris way
 
-
-class Encoder_SPLIT_intermediate(nn.Module):
-
-    def __init__(self, seq_len, n_features, intermediate_position, batch_size=None, embedding_dim=64):
-        super(Encoder_SPLIT_intermediate, self).__init__()
-        self.seq_len, self.n_features = seq_len, n_features
-        self.embedding_dim, self.hidden_dim = embedding_dim, embedding_dim // 2
-        self.rnn1_0 = nn.LSTM(
-            input_size=1,
-            hidden_size=4,
-            num_layers=2,
-            batch_first=True
-        )
-        self.rnn1_1 = nn.LSTM(
-            input_size=1,
-            hidden_size=4,
-            num_layers=2,
-            batch_first=True
-        )
-
-        self.encoder_dense_scale = 20
-        self.linear1 = nn.Linear(
-            in_features=2**8, out_features=self.encoder_dense_scale * 4)
-        self.linear2 = nn.Linear(
-            in_features=self.encoder_dense_scale * 4, out_features=self.encoder_dense_scale * 2)
-        self.linear_passthrough = nn.Linear(
-            2 * seq_len, self.encoder_dense_scale * 2)
-        self.linear3 = nn.Linear(
-            in_features=self.encoder_dense_scale * 4, out_features=self.embedding_dim)
-
-        self.linearH = nn.Linear(4 * seq_len, 2**7)
-        self.linearL = nn.Linear(4 * seq_len, 2**7)
-
-        self.intermediate_position = intermediate_position
-        self.batch_size = batch_size
-
-    def forward(self, x):
-        if self.intermediate_position == "return_rnn":
-            batch_size = x.shape[0]
-            
-            Hx, Lx = x[:, :, 0][:, :, None], x[:, :, 1][:, :, None]
-
-            #t255 = time.time()
-            Hx, (_, _) = self.rnn1_0(Hx)
-            Hx = Hx.reshape(batch_size, 4 * self.seq_len)
-            Hx = F.tanh(self.linearH(Hx))
-
-            Lx, (_, _) = self.rnn1_1(Lx)
-            Lx = Lx.reshape(batch_size, 4 * self.seq_len)
-            Lx = F.tanh(self.linearL(Lx))
-
-            x = torch.cat([Hx, Lx], dim=1)
-            return x, batch_size
-        
-        elif self.intermediate_position == "return_embedding":
-            x, orig = x
-            orig = torch.swapaxes(orig, 1, 2)
-
-            x_flat = orig.reshape(self.batch_size, 2 * self.seq_len)
-            other_dat = self.linear_passthrough(x_flat)
-            
-            x = F.tanh(self.linear1(x))
-            x = F.tanh(self.linear2(x))
-            x = torch.cat([x, other_dat], axis=1)
-            x = F.tanh(self.linear3(x))
-
-            return x.reshape((self.batch_size, self.embedding_dim))  # phil harris way
 
 class Decoder_SPLIT(nn.Module):
 
@@ -380,7 +314,7 @@ class Decoder_SPLIT(nn.Module):
         return x
 
 
-import time
+
 class LSTM_AE_SPLIT(nn.Module):
 
     def __init__(self, num_ifos, num_timesteps, BOTTLENECK):
@@ -397,59 +331,10 @@ class LSTM_AE_SPLIT(nn.Module):
     def forward(self, x):
         x = x.transpose(1, 2)
         x = self.encoder(x)
+
+        #(a(x))
         x = self.decoder(x)
 
-        x = x.transpose(1, 2)
-
-        return x
-
-
-class LSTM_AE_SPLIT_precompute(nn.Module):
-
-    def __init__(self, num_ifos, num_timesteps, BOTTLENECK):
-        super(LSTM_AE_SPLIT_precompute, self).__init__()
-
-        self.num_timesteps = num_timesteps
-        self.num_ifos = num_ifos
-        self.BOTTLENECK = BOTTLENECK
-        self.encoder = Encoder_SPLIT_intermediate(
-            seq_len=num_timesteps, n_features=num_ifos, embedding_dim=BOTTLENECK, intermediate_position="return_rnn")
-        self.decoder = Decoder_SPLIT(
-            seq_len=num_timesteps, n_features=num_ifos, input_dim=BOTTLENECK)
-
-        
-    def forward(self, x):
-        x, _ = x
-        x = x.transpose(1, 2)
-        x, batch_size = self.encoder(x)
-        return x, batch_size
-
-class LSTM_AE_SPLIT_use_precomputed(nn.Module):
-
-    def __init__(self, num_ifos, num_timesteps, BOTTLENECK, batch_size):
-        super(LSTM_AE_SPLIT_use_precomputed, self).__init__()
-
-        self.num_timesteps = num_timesteps
-        self.num_ifos = num_ifos
-        self.BOTTLENECK = BOTTLENECK
-        self.encoder = Encoder_SPLIT_intermediate(
-            seq_len=num_timesteps, n_features=num_ifos, embedding_dim=BOTTLENECK, 
-            intermediate_position="return_embedding", batch_size=batch_size)
-        self.decoder = Decoder_SPLIT(
-            seq_len=num_timesteps, n_features=num_ifos, input_dim=BOTTLENECK)
-
-    def forward(self, x):
-        t332 = time.time()
-        x = self.encoder(x)
-        #print(x[0, 0])
-        #print("XX encoding time", time.time()-t332)
-        #(a(x))
-        #t338 = time.time()
-        x = self.decoder(x)
-        
         #(a(x))
         x = x.transpose(1, 2)
-        #print(x[0, 0, 0])
-        #print("XX decoding time", time.time()-t338)
         return x
-
