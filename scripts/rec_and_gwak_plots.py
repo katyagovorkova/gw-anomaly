@@ -170,7 +170,12 @@ def corner_plotting(
         np.save(f'{plot_savedir}/cph.npy', corner_plot_hist)
 
 
-def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, class_name):
+def recreation_plotting(
+        data_original,
+        data_recreated,
+        data_cleaned,
+        savedir,
+        class_name):
 
     ts = np.linspace(0, 1000 * SEG_NUM_TIMESTEPS /
                      SAMPLE_RATE, SEG_NUM_TIMESTEPS)
@@ -244,8 +249,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[j, k].plot(ts, orig_samps[j, k, :],
                                label='Signal + Noise', c='black', alpha=0.55)
 
-                for l, (l_name, l_color) in enumerate(zip(['bbh', 'sglf', 'sghf'],
-                        ['steelblue', 'salmon', 'goldenrod'])):
+                for l_name, l_color in zip(['bbh', 'sglf', 'sghf'],
+                        ['steelblue', 'salmon', 'goldenrod']):
+                    l = CLASS_ORDER.index(l_name)
                     mae = np.mean(
                         np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                     alpha = 1
@@ -276,8 +282,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[j, k].plot(ts, orig_samps[j, k, :],
                                label='Signal + Noise', c='black', alpha=0.55)
 
-                for l, (l_name, l_color) in enumerate(zip(['background', 'glitches'],
-                    ['purple', 'darkgreen'])):
+                for l_name, l_color in zip(['background', 'glitches'],
+                    ['purple', 'darkgreen']):
+                    l = CLASS_ORDER.index(l_name)
                     mae = np.mean(
                         np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                     alpha = 1
@@ -312,8 +319,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[k].plot(ts, data_cleaned[j, k, :],
                             label='Signal', c='pink')
 
-            for l, (l_name, l_color) in enumerate(zip(['bbh', 'sglf', 'sghf'],
-                        ['steelblue', 'salmon', 'goldenrod'])):
+            for l_name, l_color in zip(['bbh', 'sglf', 'sghf'],
+                        ['steelblue', 'salmon', 'goldenrod']):
+                l = CLASS_ORDER.index(l_name)
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                 alpha = 1
@@ -353,8 +361,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                 axs[k].plot(ts, data_cleaned[j, k, :],
                             label='Signal', c='pink')
 
-            for l, (l_name, l_color) in enumerate(zip(['background', 'glitches'],
-                    ['purple', 'darkgreen'])):
+            for l_name, l_color in zip(['background', 'glitches'],
+                    ['purple', 'darkgreen']):
+                l = CLASS_ORDER.index(l_name)
 
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
