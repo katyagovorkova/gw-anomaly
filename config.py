@@ -3,6 +3,9 @@ PERIOD = 'O3a' # or O3b
 VERSION = PERIOD + 'v2' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
 STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
+DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
+MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models'
+
 # GPU
 GPU_NAME = 'cuda:0'
 # data generation

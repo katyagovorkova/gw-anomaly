@@ -19,13 +19,17 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
     SMOOTHING_KERNEL_SIZES,
     DO_SMOOTHING,
-    GPU_NAME
+    GPU_NAME,
+    MODELS_LOCATION
 )
 
 
 def main(args):
 
     DEVICE = torch.device(f'cuda:{args.gpu}')
+
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
     if args.metric_coefs_path is not None:
         # initialize histogram
@@ -153,21 +157,21 @@ def main(args):
             # Determine the dimensions of the output array
             n_chunks = len(important_points)
             chunk_length = 2 * window_size + 1
-            
+
             # Initialize an empty array to store the chunks
             chunks = np.zeros((2, n_chunks, chunk_length))
-            
+
             for idx, point in enumerate(important_points):
                 # Define the start and end points for extraction
                 start = max(0, point - window_size)
                 end = min(time_series.shape[1], point + window_size + 1)
-                
+
                 # Handle edge cases
                 extracted_start = window_size - (point - start)
                 extracted_end = extracted_start + (end - start)
-                
+
                 chunks[:, idx, extracted_start:extracted_end] = time_series[:, start:end]
-            
+
             return chunks
 
         for timeslide_num in range(1, n_timeslides + 1):
@@ -193,7 +197,7 @@ def main(args):
 
             timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
             final_values = full_evaluation(
-                timeslide[None, :, :], args.model_folder_path, DEVICE)
+                timeslide[None, :, :], model_path, DEVICE)
             print(final_values.shape)
             print('saving, individually')
             means, stds = torch.mean(
@@ -222,7 +226,7 @@ def main(args):
                     scaled_evals.append(scaled_eval[0, :])
                     elem = torch.from_numpy(elem).to(DEVICE)
                     scores.append(fm_model(elem).detach().cpu().numpy())# - bias_value)
-                
+
                 scores = np.array(scores)
                 scaled_evals = np.array(scaled_evals)
 
@@ -233,7 +237,7 @@ def main(args):
 
                 #extract important timeslides with indices
                 important_timeslide = extract_chunks(timeslide, indices, window_size=1024)
-                
+
                 #print(indices, filtered_final_score)
                 #print("timeslide shape", important_timeslide.shape)
                 #print("filtered_final_score", filtered_final_score.shape)
@@ -256,8 +260,11 @@ if __name__ == '__main__':
     parser.add_argument('save_path', type=str,
                         help='Folder to which save the timeslides')
 
-    parser.add_argument('model_folder_path', nargs='+', type=str,
-                        help='Path to the folder containing the models')
+    parser.add_argument('model_path', nargs='+', type=str,
+                        help='Path to the models')
+
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     # Additional arguments
     parser.add_argument('--data-path', type=str, nargs='+',

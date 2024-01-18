@@ -1,4 +1,4 @@
-from config import VERSION, TIMESLIDE_TOTAL_DURATION, TIMESLIDES_START, TIMESLIDES_STOP
+from config import VERSION, TIMESLIDE_TOTAL_DURATION, TIMESLIDES_START, TIMESLIDES_STOP, DATA_LOCATION
 
 signalclasses = ['bbh', 'sglf', 'sghf']
 backgroundclasses = ['background', 'glitches']
@@ -17,34 +17,35 @@ wildcard_constraints:
 
 rule train_gwak:
     params:
-        data = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
+        data = expand('{datalocation}/{dataclass}.npz',
                       dataclass='{dataclass}',
-                      version=VERSION),
+                      datalocation=DATA_LOCATION),
+    output:
         savedir = directory('output/{version}/trained/{dataclass}'),
         model_file = 'output/{version}/trained/models/{dataclass}.pt'
     shell:
         'mkdir -p {params.savedir}; '
-        'python3 scripts/train_gwak.py {params.data} {params.model_file} {params.savedir} '
+        'python3 scripts/train_gwak.py {params.data} {output.model_file} {output.savedir} '
 
 rule generate_timeslides_for_far:
     input:
-        model_path = expand(
-            '/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+        model_path = expand(rules.train_gwak.params.model_file,
             dataclass=modelclasses),
     params:
+        from_saved_models = True,
         data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
-        save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
     output:
-        f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
+        save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
+        log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
         'mkdir -p {params.save_evals_path}; '
-        'python3 scripts/evaluate_timeslides.py {input.model_path}\
+        'python3 scripts/evaluate_timeslides.py {input.model_path} {params.from_saved_models} \
             --data-path {params.data_path} \
-            --save-evals-path {params.save_evals_path} \
+            --save-evals-path {output.save_evals_path} \
             --files-to-eval {wildcards.files_to_eval} \
             --timeslide-total-duration {wildcards.timeslide_total_duration} \
             --gpu {wildcards.id} \
-            > {output}'
+            > {output.log_file}'
 
 rule all_timeslides_for_far:
     input:
@@ -54,26 +55,29 @@ rule all_timeslides_for_far:
             timeslide_total_duration=32875) # 3.156e+8/800/4/3
 
 rule evaluate_signals:
-    params:
-        source_file = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
-                             dataclass='{signal_dataclass}',
-                             version='{version}'),
-        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+    input:
+        model_path = expand(rules.train_gwak.params.model_file,
                             dataclass=modelclasses,
                             version='{version}'),
+    params:
+        from_saved_models = True,
+        source_file = expand('{datalocation}/{dataclass}.npz',
+                             dataclass='{signal_dataclass}',
+                             datalocation=DATA_LOCATION),
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
-        'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {params.model_path}'
+        'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {params.model_path} {params.from_saved_models}'
 
 rule plot_cut_efficiency:
-    params:
-        generated_data_file = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
-                             dataclass='{signal_dataclass}',
-                             version='{version}'),
+    input:
         evaluated_data_file = expand(rules.evaluate_signals.output,
                              version='{version}',
                              signal_dataclass='{signal_dataclass}'),
+    params:
+        generated_data_file = expand('{datalocation}/{dataclass}.npz',
+                             dataclass='{signal_dataclass}',
+                             datalocation=DATA_LOCATION),
     output:
         save_file = directory('output/{version}/cut_effic/{signal_dataclass}/')
     shell:
@@ -82,23 +86,25 @@ rule plot_cut_efficiency:
                     {params.generated_data_file}'
 
 rule generate_timeslides_for_fm:
-    params:
-        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+    input:
+        model_path = expand(rules.train_gwak.params.model_file,
             dataclass=modelclasses,
             version=VERSION),
-        data_path = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
+    params:
+        from_saved_models = True,
+        data_path = expand('{datalocation}/{dataclass}.npz',
             dataclass='timeslides',
-            version=VERSION),
+            datalocation=DATA_LOCATION),
         shorten_timeslides = True,
         save_path = f'output/{VERSION}/timeslides/',
-    # output:
+    output:
         save_evals_path = f'output/{VERSION}/timeslides/evals/',
         save_normalizations_path = f'output/{VERSION}/timeslides/normalization/',
     shell:
         'mkdir -p {params.save_path}; '
         'mkdir -p {params.save_evals_path}; '
         'mkdir -p {params.save_normalizations_path}; '
-        'python3 scripts/compute_far.py {params.save_path} {params.model_path} \
+        'python3 scripts/compute_far.py {params.save_path} {input.model_path} {params.from_saved_models} \
             --data-path {params.data_path} \
             --save-evals-path {params.save_evals_path} \
             --save-normalizations-path {params.save_normalizations_path} \

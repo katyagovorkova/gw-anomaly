@@ -20,7 +20,8 @@ from config import (
     DATA_EVAL_MAX_BATCH,
     SEG_NUM_TIMESTEPS,
     RETURN_INDIV_LOSSES,
-    SCALE
+    SCALE,
+    MODELS_LOCATION
 )
 
 
@@ -91,7 +92,12 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False, loa
 
 
 def main(args):
+
     DEVICE = torch.device(GPU_NAME)
+
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
     data = np.load(args.data_path)['data']
     print(f'loaded data shape: {data.shape}')
     if data.shape[0] == 2:
@@ -99,14 +105,14 @@ def main(args):
     n_batches_total = data.shape[0]
 
     _, timeaxis_size, feature_size = full_evaluation(
-        data[:2], args.model_paths, DEVICE).cpu().numpy().shape
+        data[:2], model_path, DEVICE).cpu().numpy().shape
     result = np.zeros((n_batches_total, timeaxis_size, feature_size))
     n_splits = n_batches_total // DATA_EVAL_MAX_BATCH
     if n_splits * DATA_EVAL_MAX_BATCH != n_batches_total:
         n_splits += 1
     for i in range(n_splits):
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = full_evaluation(
-            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], args.model_paths, DEVICE).cpu().numpy()
+            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE).cpu().numpy()
 
     np.save(args.save_path, result)
 
@@ -122,8 +128,11 @@ if __name__ == '__main__':
     parser.add_argument('save_path', type=str,
                         help='Folder to which save the evaluated injections')
 
-    parser.add_argument('model_paths', nargs='+', type=str,
+    parser.add_argument('model_path', nargs='+', type=str,
                         help='List of models')
+
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     args = parser.parse_args()
     main(args)

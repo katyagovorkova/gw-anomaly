@@ -17,7 +17,8 @@ from config import (
     SAMPLE_RATE,
     FACTORS_NOT_USED_FOR_FM,
     SEGMENT_OVERLAP,
-    SEG_NUM_TIMESTEPS
+    SEG_NUM_TIMESTEPS,
+    MODELS_LOCATION
     )
 
 
@@ -91,10 +92,11 @@ def create_ffts_by_detec(data, device):
 
 def main(args):
 
-    device_str = f'cuda:{args.gpu}'
-    #device_str = "cpu"
-    DEVICE = torch.device(device_str)
-    gwak_models = load_gwak_models(args.model_path, DEVICE, device_str)
+
+    DEVICE = torch.device(f'cuda:{args.gpu}')
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+    gwak_models = load_gwak_models(model_path, DEVICE, f'cuda:{args.gpu}')
 
     orig_kernel = 50
     kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
@@ -187,7 +189,7 @@ def main(args):
         # print(f"size reduction: {len(selection)}") #/H_ffts.shape[0]:.2f
 
         final_values, midpoints = full_evaluation(
-                timeslide[None, :, :], args.model_path, DEVICE,
+                timeslide[None, :, :], model_path, DEVICE,
                 return_midpoints=True, loaded_models=gwak_models,
                 # selection=selection)
                 selection=None)
@@ -255,6 +257,9 @@ if __name__ == '__main__':
     # Required arguments
     parser.add_argument('model_path', nargs='+', type=str,
                         help='Path to the models')
+
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     # Additional arguments
     parser.add_argument('--data-path', type=str,
