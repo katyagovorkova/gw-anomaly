@@ -196,7 +196,7 @@ def main(args):
             timeslide = timeslide[:, start_point:start_point + reduced_len]
 
             timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
-            final_values = full_evaluation(
+            final_values, _ = full_evaluation(
                 timeslide[None, :, :], model_path, DEVICE)
             print(final_values.shape)
             print('saving, individually')
