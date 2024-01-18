@@ -108,7 +108,7 @@ if heuristics_tests: #define the heuristic test helper functions
         for stren in strens:
             idx = np.searchsorted(relation[:, 0], stren)
             if idx == len(relation[:, 0]):
-                required_pearsons.append(1)
+                required_pearsons.append(-1)
             else:
                 required_pearsons.append(relation[idx, 1])
         if flag:
@@ -119,7 +119,7 @@ if heuristics_tests: #define the heuristic test helper functions
         # does it pass?
         if debug:
             print(f"required: {required}, actual: {actual}")
-        return not required + bar < actual
+        return  required + bar > actual
 
     def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
         # does it pass?
@@ -157,11 +157,7 @@ if heuristics_tests: #define the heuristic test helper functions
 
         # for the long range
         long_required_pearson = compute_required_pearson(long[0], long_relation)
-
-        long_passed = single_condition(long_required_pearson, long[1])
-        short_passed = iterated_condition(short_required_pearson, short[1])
-        symmetry_passed = pairwise_symmetry_condition(gwak_features)
-        return long_passed and short_passed and symmetry_passed
+        return pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1])
 
 
 def event_clustering(indices, scores, spacing, device):
