@@ -254,12 +254,6 @@ def main(args):
     
     linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
     bias_value = fm_model.layer.bias#.detach().cpu().numpy()
-    if not PEARSON_FLAG:
-        # extract weights and bias
-        #print("143", linear_weights.shape)
-        linear_weights = linear_weights[:, :-1]
-        #bias_value = fm_model.layer.bias
-        norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
