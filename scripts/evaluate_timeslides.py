@@ -252,11 +252,14 @@ def main(args):
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
 
-    linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
-    bias_value = fm_model.layer.bias#.detach().cpu().numpy()
-    linear_weights[-2] += linear_weights[-1]
+    linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+    bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+    #print(linear_weights.shape)
+    linear_weights[:, -2] += linear_weights[:, -1]
     # removing pearson
-    linear_weights = linear_weights[:-1]
+    
+
+    linear_weights = linear_weights[:, :-1]
     norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
@@ -292,7 +295,7 @@ def main(args):
         segments = split_into_segments_torch(data, device=DEVICE)
         segments_normalized = std_normalizer_torch(segments)
 
-        RNN_precomputed_all, _ = full_evaluation(
+        RNN_precomputed_all = full_evaluation(
                     segments_normalized, args.model_path, DEVICE, 
                     return_midpoints=True, loaded_models=None, grad_flag=False,
                     do_rnn_precomp=True, already_split=True)
