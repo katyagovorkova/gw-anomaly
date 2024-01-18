@@ -9,7 +9,8 @@ from torch.nn.functional import conv1d
 from models import LinearModel
 from evaluate_data import full_evaluation
 from helper_functions import load_gwak_models, split_into_segments_torch, std_normalizer_torch
-
+from scipy.stats import pearsonr
+from scipy.signal import welch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
@@ -22,6 +23,147 @@ from config import (
     SEG_NUM_TIMESTEPS,
     PEARSON_FLAG
     )
+
+heuristics_tests = True
+if heuristics_tests: #define the heuristic test helper functions
+    def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+        # works for one window at a time
+        Hs = H[H_start:H_end]
+        minval = 1
+        for shift in range(-maxshift, maxshift):
+            Ls = L[H_start+shift:H_end+shift]
+            #minval = min(pearsonr(Hs, Ls)[0], minval)
+            p = pearsonr(Hs, Ls)[0]
+            if p < minval:
+                minval = p
+                shift_idx = shift
+            
+        return minval, shift_idx
+
+    def compute_signal_strength(x):
+        psd = welch(x, axis=1)[1]
+        HLS = np.log(np.sum(psd[0]))
+        LLS = np.log(np.sum(psd[1]))
+        return (HLS+LLS)/2
+
+    def compute_signal_strength_chop(x, y):
+        psd0 = welch(x)[1]
+        psd1 = welch(y)[1]
+        HLS = np.log(np.sum(psd0))
+        LLS = np.log(np.sum(psd1))
+        return (HLS+LLS)/2
+
+    def make_split_idxs(duration, seglen=200, overlap=50):
+        top = seglen
+        splits = []
+        while top < duration:
+            splits.append([top-seglen, top])
+            top += overlap
+        return splits
+
+    def parse_strain(x):
+        # take strain, compute the long sig strenght & pearson
+        # split it up, do the same thing for short
+        long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
+        long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
+        
+        
+        split_idxs = make_split_idxs(len(x[0]))[1:-1] # cut out ends to shifting can happen there
+        short_pearsons = []
+        short_sig_strengths = []
+        for split in split_idxs:
+            start, end = split
+            
+            pearson, shift_idx = shifted_pearson(x[0], x[1], start, end)
+            sig_strength = compute_signal_strength_chop(x[0, start:end], x[1, start+shift_idx:end+shift_idx] )
+            
+            short_pearsons.append(pearson)
+            short_sig_strengths.append(sig_strength)
+            
+        short_pearsons = np.array(short_pearsons)
+        short_sig_strengths = np.array(short_sig_strengths)
+        
+        return [long_sig_strength, long_pearson], [short_sig_strengths, short_pearsons]
+        
+    def combine_freqcorr(x):
+        # x shape is (N, 16)
+        new = np.zeros((x.shape[0], 11))
+        jump = 0
+        for i in range(15):
+            if i % 3 != 2: 
+                new[:, i-jump] = x[:, i]
+            else:
+                jump += 1
+                new[:, -2] += x[:, i]
+            
+        new[:, -1] = x[:, -1]
+        
+        return new
+
+    def compute_required_pearson(strens, relation):
+        # relation is [:, 0] strengths, [:, 1] pearsons
+        required_pearsons = []
+        flag = False
+        if not isinstance(strens, np.ndarray) and not type(strens) is list :
+            strens = [strens]
+            flag = True
+        for stren in strens:
+            idx = np.searchsorted(relation[:, 0], stren)
+            if idx == len(relation[:, 0]):
+                required_pearsons.append(1)
+            else:
+                required_pearsons.append(relation[idx, 1])
+        if flag:
+            return required_pearsons[0]
+        return required_pearsons
+
+    def single_condition(required, actual, bar=0.15, debug=False):
+        # does it pass?
+        if debug:
+            print(f"required: {required}, actual: {actual}")
+        return not required + bar < actual
+        
+    def iterated_condition(required, actual, failed_fraction=0.2, debug=False): 
+        # does it pass?
+        failed_count = 0
+        for i in range(len(required)):
+            if not single_condition(required[i], actual[i], debug=debug):
+                failed_count += 1
+        
+        return failed_count / len(required) < failed_fraction
+
+    def pairwise_symmetry_condition(scores):
+        # does not include glitch feature
+        def functional(x, y): 
+            #enforce  |x| >= |y|
+            x = abs(x)
+            y = abs(y)
+
+            if y > x:
+                x, y = y, x
+            # signal autoencoder feature shouldn't be significantly positive
+            return (x+1.5)/(y+1.5) - 1.5
+        passed = True
+        for pair in [[2, 3], [6, 7], [8, 9]]:
+            a, b = pair
+            
+            if functional(scores[a], scores[b]) > 0:
+                passed = False
+                
+        return passed
+
+    def joint_heuristic_test(strain, gwak_features, short_relation, long_relation):
+        long, short = parse_strain(strain)
+        # for the short range
+        short_required_pearson = compute_required_pearson(short[0], short_relation)
+
+        # for the long range
+        long_required_pearson = compute_required_pearson(long[0], long_relation)
+
+        long_passed = single_condition(long_required_pearson, long[1])
+        short_passed = iterated_condition(short_required_pearson, short[1])
+        symmetry_passed = pairwise_symmetry_condition(gwak_features)
+        return long_passed and short_passed and symmetry_passed
 
 
 def event_clustering(indices, scores, spacing, device):
@@ -55,48 +197,33 @@ def event_clustering(indices, scores, spacing, device):
         final_points.append(bestval)
     return torch.from_numpy(np.array(final_points)).int().to(device)
 
-def extract_chunks(time_series, important_points, device, window_size=2048):
-    
-    # Determine the dimensions of the output array
-    n_chunks = len(important_points)
-    chunk_length = 2 * window_size + 1
+def extract_chunks(strain_data, timeslide_num, important_points, device, roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
+    '''
+    Important points are indicies into thestrain_data
+    '''
+    L_shift = timeslide_num*roll_amount
+    timeslide_len = strain_data.shape[1]
+    edge_check_passed = []
 
-    # Initialize an empty array to store the chunks
-    chunks = np.zeros((2, n_chunks, chunk_length))
+    fill_strains = np.zeros((len(important_points), 2, window_size*2))
     for idx, point in enumerate(important_points):
-        # Define the start and end points for extraction
-        start = max(0, point - window_size)
-        end = min(time_series.shape[1], point + window_size + 1)
+        # check that the point is not on the edge 
+        edge_check_passed.append(abs(point - timeslide_len)% timeslide_len > window_size*2)
+        if abs(point - timeslide_len)% timeslide_len > window_size*2:
+            H_selection = strain_data[0, point-window_size:point+window_size]
 
-        # Handle edge cases
-        extracted_start = window_size - (point - start)
-        extracted_end = extracted_start + (end - start)
+            # if the livingston points overflow, the modulo should bring them
+            # into the right location. also data is clipped //1000 * 1000
+            # which is divisible by 200, so it should work 
+            L_start = (point-window_size+L_shift) % timeslide_len
+            L_end = (point+window_size+L_shift) % timeslide_len
 
-        #chunks[:, idx, extracted_start:extracted_end] = time_series[:, start:end]
-        idxs = torch.arange(start, end, 1).to(device)
-        chunks[:, idx, extracted_start:extracted_end] = time_series.index_select(1,idxs).detach().cpu().numpy()
+            L_selection = strain_data[1, L_start:L_end]
 
-    return chunks
-
-def create_ffts_by_detec(data, device):
-    clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
-    data = data[:, :, :clipped_time_axis]
-
-    segments = split_into_segments_torch(data, device=device)
-
-    segments_normalized = std_normalizer_torch(segments)
-
-    # segments_normalized at this point is (N_batches, N_samples, 2, 100) and
-    # must be reshaped into (N_batches * N_samples, 2, 100) to work with
-    # quak_predictions
-    N_batches, N_samples = segments_normalized.shape[
-        0], segments_normalized.shape[1]
-    segments_normalized = torch.reshape(
-        segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
-
-    H_ffts = torch.fft.rfft(segments_normalized[:, 0, :], axis=-1)
-    L_ffts = torch.fft.rfft(segments_normalized[:, 1, :], axis=-1)
-    return H_ffts, L_ffts
+            fill_strains[idx, 0, :] = H_selection
+            fill_strains[idx, 1, :] = L_selection
+        
+    return fill_strains, edge_check_passed
 
 def main(args):
     device_str = f'cuda:{args.gpu}'
@@ -106,6 +233,10 @@ def main(args):
     kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
     kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
     kernel = kernel[None, :, :]
+
+    if heuristics_tests:
+        long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+        short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
     
     gwak_models_ = load_gwak_models(args.model_path, DEVICE, device_str)
     norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
@@ -123,12 +254,6 @@ def main(args):
     
     linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
     bias_value = fm_model.layer.bias#.detach().cpu().numpy()
-    if not PEARSON_FLAG:
-        # extract weights and bias
-        #print("143", linear_weights.shape)
-        linear_weights = linear_weights[:, :-1]
-        #bias_value = fm_model.layer.bias
-        norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
@@ -139,8 +264,12 @@ def main(args):
     initial_roll = 0
     while not_finished:
         data = np.load(args.data_path)
+        reduced_len = (data.shape[1] // 1000) * 1000
+        data = data[:, :reduced_len]
+        
         data = torch.from_numpy(data).to(DEVICE)
         data[1, :] = torch.roll(data[1, :], initial_roll)
+        strain_data = np.copy(data.cpu().numpy())
         sample_length = data.shape[1] / SAMPLE_RATE
         n_timeslides = int(args.timeslide_total_duration //
                         sample_length)
@@ -148,7 +277,7 @@ def main(args):
         print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
         print('Number of timeslides:', n_timeslides)
 
-        reduced_len = (data.shape[1] // 1000) * 1000
+        
         if not torch.is_tensor(data):
             data = torch.from_numpy(data).to(DEVICE)
         data = data[None, :, :]
@@ -171,7 +300,6 @@ def main(args):
 
         timeslide = segments_normalized
         gwak_models = load_gwak_models(args.model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
-
 
         for timeslide_num in range(1, n_timeslides + 1):
             if timeslide_num != 1: print(f"throughput {3600/(time.time()-ts):.2f} Hz")
@@ -209,7 +337,7 @@ def main(args):
             save_full_timeslide_readout = True
             if save_full_timeslide_readout:
 
-                FAR_2days = -1.617 # lowest FAR bin we want to worry about
+                FAR_2days = -1.67 # lowest FAR bin we want to worry about
 
                 # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
                 final_values_slx = (final_values - mean_norm)/std_norm
@@ -221,31 +349,62 @@ def main(args):
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
-
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
-                #print("217", len(indices))
-
-                if len(indices) > 0:
-                    indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+               
+                if len(indices) == 0: continue # just start the next timeslide, no interesting events
+                
+                indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
                 filtered_final_score = smoothed_scores.index_select(0, indices)
                 filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
                 indices_ = indices.detach().cpu().numpy()
 
                 # extract important timeslides with indices
-                important_timeslide = extract_chunks(timeslide,
+                timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num, 
                                                     midpoints[indices_],
-                                                    DEVICE, window_size=1024)
+                                                    DEVICE, window_size=1024) # 0.25 seconds on either side
+                                                                              # so it should come out to desired 0.5
                 filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
                 filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
+                filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
+                filtered_final_score = filtered_final_score[edge_check_filter]
+                timeslide_chunks = timeslide_chunks[edge_check_filter]
+
+                #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
+                if heuristics_tests:
+                    combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
+                    passed_heuristics = []
+                    for i, strain_segment in enumerate(timeslide_chunks):
+                        passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
+                                                                      short_relation, long_relation))
+                        
+                    #print("passed heuristics:", passed_heuristics)
+
+                    filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
+                    filtered_final_score = filtered_final_score[passed_heuristics]
+                    timeslide_chunks = timeslide_chunks[passed_heuristics]
+                #print(important_timeslide.shape)
+                #print(filtered_final_scaled_evals.shape, filtered_final_score.shape, timeslide_chunks.shape)
+                #assert 0
+
+
                 
                 if len(indices_) > 0:
-                    print(len(indices_))
+                    #print(len(indices_))
                     np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
                                                 final_scaled_evals=filtered_final_scaled_evals,
                                                 metric_score = filtered_final_score,
-                                                timeslide_data = important_timeslide,
+                                                timeslide_data = timeslide_chunks,
                                                 time_event_ocurred = midpoints[indices_])
+
+                #np.save(f'{args.save_evals_path}/sanity_timeslide_data.npy', strain_data)
+                #print("event score", filtered_final_score)
+                #print("gwak stats", filtered_final_scaled_evals)
+                #print("saving folder", args.save_evals_path)
+                
+                #assert 0
+                    
             if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
                 track_data = np.zeros(1)
                 np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
