@@ -22,8 +22,9 @@ from config import (
     RECREATION_HEIGHT_PER_SAMPLE,
     RECREATION_SAMPLES_PER_PLOT,
     GPU_NAME,
-    FACTORS_NOT_USED_FOR_FM
-)
+    FACTORS_NOT_USED_FOR_FM,
+    MODELS_LOCATION
+    )
 DEVICE = torch.device(GPU_NAME)
 
 
@@ -402,7 +403,8 @@ def main(args):
         arr[3 * i + 3] = weight[3 * i + 3]
         weights.append(arr[:-1])  # cut out pearson
 
-    model_paths = args.model_path
+    model_paths = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
     loss_values_SNR = dict()
     loss_values = dict()
@@ -502,6 +504,8 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('model_path', help='path to the models',
                         nargs='+', type=str)
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
     parser.add_argument('fm_model_path', help='path to the final metric model',
                         type=str)
     parser.add_argument('savedir', help='path to save the plots',

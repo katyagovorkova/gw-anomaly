@@ -1,4 +1,10 @@
-from config import VERSION, TIMESLIDE_TOTAL_DURATION, TIMESLIDES_START, TIMESLIDES_STOP, DATA_LOCATION
+from config import (
+    VERSION,
+    TIMESLIDE_TOTAL_DURATION,
+    TIMESLIDES_START,
+    TIMESLIDES_STOP,
+    DATA_LOCATION
+    )
 
 signalclasses = ['bbh', 'sglf', 'sghf']
 backgroundclasses = ['background', 'glitches']
@@ -24,21 +30,22 @@ rule train_gwak:
         savedir = directory('output/{version}/trained/{dataclass}'),
         model_file = 'output/{version}/trained/models/{dataclass}.pt'
     shell:
-        'mkdir -p {params.savedir}; '
+        'mkdir -p {output.savedir}; '
         'python3 scripts/train_gwak.py {params.data} {output.model_file} {output.savedir} '
 
 rule generate_timeslides_for_far:
     input:
-        model_path = expand(rules.train_gwak.params.model_file,
-            dataclass=modelclasses),
+        model_path = expand(rules.train_gwak.output.model_file,
+            dataclass=modelclasses,
+            version=VERSION),
     params:
-        from_saved_models = True,
+        from_saved_models = False,
         data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
     output:
         save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
         log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
-        'mkdir -p {params.save_evals_path}; '
+        'mkdir -p {output.save_evals_path}; '
         'python3 scripts/evaluate_timeslides.py {input.model_path} {params.from_saved_models} \
             --data-path {params.data_path} \
             --save-evals-path {output.save_evals_path} \
@@ -56,18 +63,18 @@ rule all_timeslides_for_far:
 
 rule evaluate_signals:
     input:
-        model_path = expand(rules.train_gwak.params.model_file,
+        model_path = expand(rules.train_gwak.output.model_file,
                             dataclass=modelclasses,
                             version='{version}'),
     params:
-        from_saved_models = True,
+        from_saved_models = False,
         source_file = expand('{datalocation}/{dataclass}.npz',
                              dataclass='{signal_dataclass}',
                              datalocation=DATA_LOCATION),
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
-        'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {params.model_path} {params.from_saved_models}'
+        'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {input.model_path} {params.from_saved_models}'
 
 rule plot_cut_efficiency:
     input:
@@ -87,27 +94,27 @@ rule plot_cut_efficiency:
 
 rule generate_timeslides_for_fm:
     input:
-        model_path = expand(rules.train_gwak.params.model_file,
+        model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
     params:
-        from_saved_models = True,
+        from_saved_models = False,
         data_path = expand('{datalocation}/{dataclass}.npz',
             dataclass='timeslides',
             datalocation=DATA_LOCATION),
         shorten_timeslides = True,
         save_path = f'output/{VERSION}/timeslides/',
     output:
-        save_evals_path = f'output/{VERSION}/timeslides/evals/',
-        save_normalizations_path = f'output/{VERSION}/timeslides/normalization/',
+        save_evals_path = directory(f'output/{VERSION}/timeslides/evals/'),
+        save_normalizations_path = directory(f'output/{VERSION}/timeslides/normalization/'),
     shell:
         'mkdir -p {params.save_path}; '
-        'mkdir -p {params.save_evals_path}; '
-        'mkdir -p {params.save_normalizations_path}; '
+        'mkdir -p {output.save_evals_path}; '
+        'mkdir -p {output.save_normalizations_path}; '
         'python3 scripts/compute_far.py {params.save_path} {input.model_path} {params.from_saved_models} \
             --data-path {params.data_path} \
-            --save-evals-path {params.save_evals_path} \
-            --save-normalizations-path {params.save_normalizations_path} \
+            --save-evals-path {output.save_evals_path} \
+            --save-normalizations-path {output.save_normalizations_path} \
             --fm-shortened-timeslides {params.shorten_timeslides} '
 
 rule train_final_metric:
@@ -117,53 +124,54 @@ rule train_final_metric:
             version=VERSION),
         timeslides = f'output/{VERSION}/timeslides/evals/',
         normfactors = f'output/{VERSION}/timeslides/normalization/',
-    # output:
-    params:
+    output:
         params_file = f'output/{VERSION}/trained/final_metric_params.npy',
         norm_factor_file = f'output/{VERSION}/trained/norm_factor_params.npy',
         fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
     shell:
-        'python3 scripts/final_metric_optimization.py {params.params_file} \
-            {params.fm_model_path} {params.norm_factor_file} \
+        'python3 scripts/final_metric_optimization.py {output.params_file} \
+            {output.fm_model_path} {output.norm_factor_file} \
             --timeslide-path {input.timeslides} \
             --signal-path {input.signals} \
             --norm-factor-path {input.normfactors}'
 
 rule recreation_and_quak_plots:
     input:
-        fm_model_path = rules.train_final_metric.params.fm_model_path
-    params:
-        models = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+        fm_model_path = rules.train_final_metric.output.fm_model_path,
+        models = expand(rules.train_gwak.output.model_file,
                         dataclass=modelclasses,
                         version=VERSION),
-        test_path = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
+    params:
+        from_saved_models = False,
+        test_path = expand('{datalocation}/{dataclass}.npz',
                            dataclass='bbh',
-                           version=VERSION),
+                           datalocation=DATA_LOCATION),
         savedir = f'output/{VERSION}/paper/'
     shell:
         'mkdir -p {params.savedir}; '
-        'python3 scripts/rec_and_gwak_plots.py {params.test_path} {params.models} \
+        'python3 scripts/rec_and_gwak_plots.py {params.test_path} {params.models} {params.from_saved_models} \
             {input.fm_model_path} {params.savedir}'
 
 rule compute_far:
     input:
-        metric_coefs_path = rules.train_final_metric.params.params_file,
-        norm_factors_path = rules.train_final_metric.params.norm_factor_file,
-        fm_model_path = rules.train_final_metric.params.fm_model_path,
-        data_path = expand(rules.generate_timeslides_for_far.params.save_evals_path,
+        metric_coefs_path = rules.train_final_metric.output.params_file,
+        norm_factors_path = rules.train_final_metric.output.norm_factor_file,
+        fm_model_path = rules.train_final_metric.output.fm_model_path,
+        data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
             id='{far_id}',
             version='O3av2',
             timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
             files_to_eval=-1),
-    params:
-        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+        model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
+    params:
+        from_saved_models = False,
         shorten_timeslides = False,
     output:
         save_path = 'output/{version}/far_bins_{far_id}.npy'
     shell:
-        'python3 scripts/compute_far.py {output.save_path} {params.model_path} \
+        'python3 scripts/compute_far.py {output.save_path} {input.model_path} {params.from_saved_models} \
             --data-path {input.data_path} \
             --fm-model-path {input.fm_model_path} \
             --metric-coefs-path {input.metric_coefs_path} \
@@ -183,18 +191,19 @@ rule merge_far_hist:
 
 rule quak_plotting_prediction_and_recreation:
     input:
-        test_data = expand('/home/katya.govorkova/gwak-paper-final-models/data/{dataclass}.npz',
-                           dataclass='{dataclass}',
-                           version=VERSION)
-    params:
-        model_path = expand('/home/katya.govorkova/gwak-paper-final-models/trained/models/{dataclass}.pt',
+        model_path = expand(rules.train_gwak.output.model_file,
                             dataclass=modelclasses,
                             version=VERSION),
+    params:
+        test_data = expand('{datalocation}/{dataclass}.npz',
+                           dataclass='{dataclass}',
+                           datalocation=DATA_LOCATION),
         reduce_loss = False,
         save_file = 'output/{VERSION}/evaluated/quak_{dataclass}.npz'
     shell:
-        'python3 scripts/quak_predict.py {input.test_data} {params.save_file} {params.reduce_loss} \
-            --model-path {params.model_path} '
+        'python3 scripts/gwak_predict.py {input.test_data} {params.save_file} {params.reduce_loss} \
+            --model-path {input.model_path} \
+            --from-saved-models {params.from_saved_models} '
 
 rule plot_results:
     input:
@@ -202,9 +211,9 @@ rule plot_results:
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
-        fm_model_path = rules.train_final_metric.params.fm_model_path
+        fm_model_path = rules.train_final_metric.output.fm_model_path
     params:
-        evaluation_dir = f'/home/katya.govorkova/gwak-paper-final-models/',
+        evaluation_dir = 'output/',
         save_path = directory(f'output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '

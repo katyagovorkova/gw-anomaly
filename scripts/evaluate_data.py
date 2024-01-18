@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import torch
 
-from qwak_predict import qwak_eval
+from gwak_predict import quak_eval
 from helper_functions import (
     std_normalizer_torch,
     split_into_segments_torch,
@@ -21,7 +21,8 @@ from config import (
     SEG_NUM_TIMESTEPS,
     RETURN_INDIV_LOSSES,
     SCALE,
-    MODELS_LOCATION
+    MODELS_LOCATION,
+    PEARSON_FLAG
 )
 
 
@@ -84,6 +85,9 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
 
+    # to make it work without pearson
+    print('SHAPE', quak_predictions.shape)
+    final_values = torch.cat([quak_predictions, torch.zeros([s if s!=15 else 1 for s in quak_predictions.shape]).to(device)], dim=-1)
     if PEARSON_FLAG:
         pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
 
@@ -100,6 +104,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
         else:
             quak_predictions = quak_predictions[:, edge_start:, :]
             slice_midpoints = slice_midpoints[edge_start:]
+
         if selection != None:
             final_values = torch.cat([quak_predictions, pearson_values[:, selection]], dim=-1)
         else:
@@ -121,15 +126,15 @@ def main(args):
         data = data.swapaxes(0, 1)
     n_batches_total = data.shape[0]
 
-    _, timeaxis_size, feature_size, _ = full_evaluation(
-        data[:2], model_path, DEVICE).cpu().numpy().shape
+    _, timeaxis_size, feature_size = full_evaluation(
+        data[:2], model_path, DEVICE)[0].cpu().numpy().shape
     result = np.zeros((n_batches_total, timeaxis_size, feature_size))
     n_splits = n_batches_total // DATA_EVAL_MAX_BATCH
     if n_splits * DATA_EVAL_MAX_BATCH != n_batches_total:
         n_splits += 1
     for i in range(n_splits):
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = full_evaluation(
-            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE).cpu().numpy()
+            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE)[0].cpu().numpy()
 
     np.save(args.save_path, result)
 

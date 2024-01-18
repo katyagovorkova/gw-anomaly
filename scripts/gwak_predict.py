@@ -126,10 +126,13 @@ def main(args):
 
     DEVICE = torch.device(GPU_NAME)
 
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
     # load the data
     data = np.load(args.test_data)['data']
     data = torch.from_numpy(data).float().to(DEVICE)
-    loss = quak_eval(data, args.model_path, DEVICE,
+    loss = quak_eval(data, model_path, DEVICE,
                      reduce_loss=args.reduce_loss)
 
     if args.reduce_loss:
@@ -155,6 +158,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--model-path', help='Required path to trained model',
                         nargs='+', type=str)
+    parser.add_argument('--from-saved-models', help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.',
+                        type=bool)
     args = parser.parse_args()
     args.reduce_loss = args.reduce_loss == "True"
 

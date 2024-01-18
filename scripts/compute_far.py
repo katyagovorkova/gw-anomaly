@@ -5,7 +5,7 @@ import numpy as np
 import torch
 
 from models import LinearModel
-from gwakpipeline.scripts.evaluate_data import full_evaluation
+from evaluate_data import full_evaluation
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
