@@ -19,9 +19,10 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
     SEGMENT_OVERLAP,
     SEG_NUM_TIMESTEPS,
-    MODELS_LOCATION
+    MODELS_LOCATION,
+    GPU_NAME
     )
-
+device_str = GPU_NAME
 heuristics_tests = True
 if heuristics_tests: #define the heuristic test helper functions
     def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
@@ -253,6 +254,10 @@ def main(args):
 
     linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
     bias_value = fm_model.layer.bias#.detach().cpu().numpy()
+    linear_weights[-2] += linear_weights[-1]
+    # removing pearson
+    linear_weights = linear_weights[:-1]
+    norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]

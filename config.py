@@ -118,7 +118,7 @@ SHIFT_STEP = 2
     20 - Pearson
 """
 # Baseline
-FACTORS_NOT_USED_FOR_FM = [3,7,11,15,19,20]
+FACTORS_NOT_USED_FOR_FM = [3,7,11,15,19]
 
 # timeslides
 GW_EVENT_CLEANING_WINDOW = 5

@@ -207,7 +207,7 @@ rule quak_plotting_prediction_and_recreation:
 
 rule plot_results:
     input:
-        dependencies = [rules.merge_far_hist.params.save_path,
+        dependencies = [ #rules.merge_far_hist.params.save_path,
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
