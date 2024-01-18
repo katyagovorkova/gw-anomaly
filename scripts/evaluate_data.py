@@ -85,9 +85,6 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
         quak_predictions = torch.reshape(
             quak_predictions, (N_batches, N_samples, len(CLASS_ORDER)))
 
-    # to make it work without pearson
-    print('SHAPE', quak_predictions.shape)
-    final_values = torch.cat([quak_predictions, torch.zeros([s if s!=15 else 1 for s in quak_predictions.shape]).to(device)], dim=-1)
     if PEARSON_FLAG:
         pearson_values, (edge_start, edge_end) = pearson_computation(data, device)
 
@@ -110,7 +107,9 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
         else:
             final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
 
-    return final_values, slice_midpoints
+        return final_values, slice_midpoints
+
+    return quak_predictions, slice_midpoints
 
 
 def main(args):

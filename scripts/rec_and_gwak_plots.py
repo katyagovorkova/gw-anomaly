@@ -391,9 +391,15 @@ def recreation_plotting(
 
 def main(args):
 
+    model_paths = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
+    fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
-        args.fm_model_path, map_location=GPU_NAME))
+        fm_model_path, map_location=GPU_NAME))
     weight = (model.layer.weight.data.cpu().numpy()[0])
     weights = []
     for i in range(5):
@@ -402,9 +408,6 @@ def main(args):
         arr[3 * i + 1] = weight[3 * i + 1]
         arr[3 * i + 3] = weight[3 * i + 3]
         weights.append(arr[:-1])  # cut out pearson
-
-    model_paths = args.model_path if not args.from_saved_models else \
-        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
     loss_values_SNR = dict()
     loss_values = dict()
@@ -508,6 +511,8 @@ if __name__ == '__main__':
                         help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
     parser.add_argument('fm_model_path', help='path to the final metric model',
                         type=str)
+    parser.add_argument('from_saved_fm_model', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
     parser.add_argument('savedir', help='path to save the plots',
                         type=str)
 

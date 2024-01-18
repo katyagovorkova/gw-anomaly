@@ -31,7 +31,16 @@ def main(args):
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
-    if args.metric_coefs_path is not None:
+    fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+
+    metric_coefs_path = args.metric_coefs_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.metric_coefs_path))
+
+    norm_factor_path = args.norm_factor_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.norm_factor_path))
+
+    if metric_coefs_path is not None:
         # initialize histogram
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
 
@@ -47,15 +56,15 @@ def main(args):
 
 
         # compute the dot product and save that instead
-        metric_vals = np.load(args.metric_coefs_path)
-        norm_factors = np.load(args.norm_factor_path)
+        metric_vals = np.load(metric_coefs_path)
+        norm_factors = np.load(norm_factor_path)
         norm_factors_cpu = norm_factors[:] #copy
         metric_vals = torch.from_numpy(metric_vals).float().to(DEVICE)
         norm_factors = torch.from_numpy(norm_factors).float().to(DEVICE)
 
         model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         model.load_state_dict(torch.load(
-            args.fm_model_path, map_location=f'cuda:{args.gpu}'))
+            fm_model_path, map_location=f'cuda:{args.gpu}'))
 
         learned_weights = model.layer.weight.detach().cpu().numpy()
         learned_bias = model.layer.bias.detach().cpu().numpy()
@@ -74,7 +83,7 @@ def main(args):
             if RETURN_INDIV_LOSSES:
                 model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
                 model.load_state_dict(torch.load(
-                    args.fm_model_path, map_location=f'cuda:{args.gpu}'))
+                    fm_model_path, map_location=f'cuda:{args.gpu}'))
                 vals = model(vals).detach()
             else:
                 vals = torch.matmul(vals, metric_vals)
@@ -272,6 +281,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--fm-model-path', type=str,
                         help='Final metric model')
+
+    parser.add_argument('--from-saved-fm-model', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     parser.add_argument('--metric-coefs-path', type=str, default=None,
                         help='Pass in path to metric coefficients to compute dot product')
