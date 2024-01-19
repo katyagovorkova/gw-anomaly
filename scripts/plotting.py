@@ -890,14 +890,14 @@ def main(args):
 
             print(f'loading {tag}')
             ts = time.time()
-            data = np.load(f'/home/katya.govorkova/gwak-paper-final-models/evaluated/{tag}_varying_snr_evals.npy')
+            data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
             data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
 
             print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
 
             data = (data - means) / stds
             data = data#[1000:]
-            snrs = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
             # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data

@@ -182,7 +182,7 @@ rule merge_far_hist:
         inputs = expand(rules.compute_far.output.save_path,
             far_id=[0,1,2,3],
             version=VERSION),
-    params:
+    output:
         save_path = f'output/{VERSION}/far_bins.npy'
     script:
         'scripts/merge_far_hist.py'
@@ -205,7 +205,7 @@ rule quak_plotting_prediction_and_recreation:
 
 rule plot_results:
     input:
-        dependencies = [ #rules.merge_far_hist.params.save_path,
+        dependencies = [ #rules.merge_far_hist.output.save_path,
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
