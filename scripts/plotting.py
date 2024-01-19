@@ -116,7 +116,7 @@ def amp_measure_vs_far_plotting(
         else:
             fm_vals = np.dot(data, metric_coefs)
 
-        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL)/SMOOTHING_KERNEL, mode='same'),
+        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL/10)/SMOOTHING_KERNEL/10, mode='same'),
             axis=1,
             arr=fm_vals)
 
@@ -743,7 +743,7 @@ def make_roc_curves_smoothing_comparison(data,
     fm_vals_orig = fm_vals[:]
     for i_window, smoothing_window in enumerate(smoothing_windows):
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{smoothing_window}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{smoothing_window}.npy')
         if smoothing_window != 1:
             fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
                 axis=1,
@@ -906,7 +906,7 @@ def main(args):
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                             [snrs_dict[elem] for elem in X3],
                             model,
@@ -918,7 +918,7 @@ def main(args):
 
         if do_make_roc_curves: #roc curve
 
-            far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+            far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
             make_roc_curves([data_dict[elem] for elem in X3],
                                 [snrs_dict[elem] for elem in X3],
                                 model,
@@ -963,20 +963,20 @@ def main(args):
             #                         f'ROC plots, SNR, vary smoothing, {elem}',
             #                         bias,
             #                         SMOOTHING_KERNEL_SIZES)
-                                    
 
 
-                
+
+
 
     if do_fake_roc:
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         fake_roc_plotting(far_hist, args.plot_savedir)
 
 
     if do_3_panel_plot:
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         metric_coefs = np.load(f'{args.data_predicted_path}/trained/final_metric_params.npy')
         norm_factors = np.load(f'{args.data_predicted_path}/trained/norm_factor_params.npy')
         means, stds = norm_factors[0], norm_factors[1]
