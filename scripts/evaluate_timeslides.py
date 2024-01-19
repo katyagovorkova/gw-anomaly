@@ -1,5 +1,6 @@
 import os
 import sys
+import time
 import argparse
 import numpy as np
 import time
@@ -16,14 +17,12 @@ sys.path.append(
 from config import (
     SAMPLE_RATE,
     FACTORS_NOT_USED_FOR_FM,
-    SMOOTHING_KERNEL_SIZES,
-    DO_SMOOTHING,
-    GPU_NAME,
     SEGMENT_OVERLAP,
     SEG_NUM_TIMESTEPS,
-    PEARSON_FLAG
+    MODELS_LOCATION,
+    GPU_NAME
     )
-
+device_str = GPU_NAME
 heuristics_tests = True
 if heuristics_tests: #define the heuristic test helper functions
     def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
@@ -37,7 +36,7 @@ if heuristics_tests: #define the heuristic test helper functions
             if p < minval:
                 minval = p
                 shift_idx = shift
-            
+
         return minval, shift_idx
 
     def compute_signal_strength(x):
@@ -66,38 +65,38 @@ if heuristics_tests: #define the heuristic test helper functions
         # split it up, do the same thing for short
         long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
         long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
-        
-        
+
+
         split_idxs = make_split_idxs(len(x[0]))[1:-1] # cut out ends to shifting can happen there
         short_pearsons = []
         short_sig_strengths = []
         for split in split_idxs:
             start, end = split
-            
+
             pearson, shift_idx = shifted_pearson(x[0], x[1], start, end)
             sig_strength = compute_signal_strength_chop(x[0, start:end], x[1, start+shift_idx:end+shift_idx] )
-            
+
             short_pearsons.append(pearson)
             short_sig_strengths.append(sig_strength)
-            
+
         short_pearsons = np.array(short_pearsons)
         short_sig_strengths = np.array(short_sig_strengths)
-        
+
         return [long_sig_strength, long_pearson], [short_sig_strengths, short_pearsons]
-        
+
     def combine_freqcorr(x):
         # x shape is (N, 16)
         new = np.zeros((x.shape[0], 11))
         jump = 0
         for i in range(15):
-            if i % 3 != 2: 
+            if i % 3 != 2:
                 new[:, i-jump] = x[:, i]
             else:
                 jump += 1
                 new[:, -2] += x[:, i]
-            
+
         new[:, -1] = x[:, -1]
-        
+
         return new
 
     def compute_required_pearson(strens, relation):
@@ -110,7 +109,7 @@ if heuristics_tests: #define the heuristic test helper functions
         for stren in strens:
             idx = np.searchsorted(relation[:, 0], stren)
             if idx == len(relation[:, 0]):
-                required_pearsons.append(1)
+                required_pearsons.append(-1)
             else:
                 required_pearsons.append(relation[idx, 1])
         if flag:
@@ -121,20 +120,20 @@ if heuristics_tests: #define the heuristic test helper functions
         # does it pass?
         if debug:
             print(f"required: {required}, actual: {actual}")
-        return not required + bar < actual
-        
-    def iterated_condition(required, actual, failed_fraction=0.2, debug=False): 
+        return  required + bar > actual
+
+    def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
         # does it pass?
         failed_count = 0
         for i in range(len(required)):
             if not single_condition(required[i], actual[i], debug=debug):
                 failed_count += 1
-        
+
         return failed_count / len(required) < failed_fraction
 
     def pairwise_symmetry_condition(scores):
         # does not include glitch feature
-        def functional(x, y): 
+        def functional(x, y):
             #enforce  |x| >= |y|
             x = abs(x)
             y = abs(y)
@@ -146,10 +145,10 @@ if heuristics_tests: #define the heuristic test helper functions
         passed = True
         for pair in [[2, 3], [6, 7], [8, 9]]:
             a, b = pair
-            
+
             if functional(scores[a], scores[b]) > 0:
                 passed = False
-                
+
         return passed
 
     def joint_heuristic_test(strain, gwak_features, short_relation, long_relation):
@@ -159,11 +158,7 @@ if heuristics_tests: #define the heuristic test helper functions
 
         # for the long range
         long_required_pearson = compute_required_pearson(long[0], long_relation)
-
-        long_passed = single_condition(long_required_pearson, long[1])
-        short_passed = iterated_condition(short_required_pearson, short[1])
-        symmetry_passed = pairwise_symmetry_condition(gwak_features)
-        return long_passed and short_passed and symmetry_passed
+        return pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1])
 
 
 def event_clustering(indices, scores, spacing, device):
@@ -207,14 +202,14 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
 
     fill_strains = np.zeros((len(important_points), 2, window_size*2))
     for idx, point in enumerate(important_points):
-        # check that the point is not on the edge 
+        # check that the point is not on the edge
         edge_check_passed.append(abs(point - timeslide_len)% timeslide_len > window_size*2)
         if abs(point - timeslide_len)% timeslide_len > window_size*2:
             H_selection = strain_data[0, point-window_size:point+window_size]
 
             # if the livingston points overflow, the modulo should bring them
             # into the right location. also data is clipped //1000 * 1000
-            # which is divisible by 200, so it should work 
+            # which is divisible by 200, so it should work
             L_start = (point-window_size+L_shift) % timeslide_len
             L_end = (point+window_size+L_shift) % timeslide_len
 
@@ -222,13 +217,16 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
 
             fill_strains[idx, 0, :] = H_selection
             fill_strains[idx, 1, :] = L_selection
-        
+
     return fill_strains, edge_check_passed
 
 def main(args):
-    device_str = f'cuda:{args.gpu}'
-    DEVICE = torch.device(device_str)
-    
+
+    DEVICE = torch.device(f'cuda:{args.gpu}')
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+    gwak_models = load_gwak_models(model_path, DEVICE, f'cuda:{args.gpu}')
+
     orig_kernel = 50
     kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
     kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
@@ -237,23 +235,32 @@ def main(args):
     if heuristics_tests:
         long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
         short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
-    
+
     gwak_models_ = load_gwak_models(args.model_path, DEVICE, device_str)
-    norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
-        8.2891174e+02, 2.1687556e+03, 1.6633119e+02, 2.3331506e+02,
-        2.1687556e+03, 6.6346790e+02, 9.0009998e+02, 2.1687556e+03,
-        3.3232565e+02, 4.5468460e+02, 2.1687556e+03, 1.8892123e-01],
-       [5.0531479e+02, 4.4439362e+02, 1.1223564e+03, 4.8320212e+02,
-        5.7444623e+02, 1.1223564e+03, 2.8041806e+02, 3.8093832e+02,
-        1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
-        2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
+    norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+    # norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
+    #     8.2891174e+02, 2.1687556e+03, 1.6633119e+02, 2.3331506e+02,
+    #     2.1687556e+03, 6.6346790e+02, 9.0009998e+02, 2.1687556e+03,
+    #     3.3232565e+02, 4.5468460e+02, 2.1687556e+03, 1.8892123e-01],
+    #    [5.0531479e+02, 4.4439362e+02, 1.1223564e+03, 4.8320212e+02,
+    #     5.7444623e+02, 1.1223564e+03, 2.8041806e+02, 3.8093832e+02,
+    #     1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
+    #     2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
+
     fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
+
+    linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+    bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+    #print(linear_weights.shape)
+    linear_weights[:, -2] += linear_weights[:, -1]
+    # removing pearson
     
-    linear_weights = fm_model.layer.weight#.detach().cpu().numpy()
-    bias_value = fm_model.layer.bias#.detach().cpu().numpy()
+
+    linear_weights = linear_weights[:, :-1]
+    norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
@@ -266,7 +273,7 @@ def main(args):
         data = np.load(args.data_path)
         reduced_len = (data.shape[1] // 1000) * 1000
         data = data[:, :reduced_len]
-        
+
         data = torch.from_numpy(data).to(DEVICE)
         data[1, :] = torch.roll(data[1, :], initial_roll)
         strain_data = np.copy(data.cpu().numpy())
@@ -277,7 +284,7 @@ def main(args):
         print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
         print('Number of timeslides:', n_timeslides)
 
-        
+
         if not torch.is_tensor(data):
             data = torch.from_numpy(data).to(DEVICE)
         data = data[None, :, :]
@@ -287,7 +294,7 @@ def main(args):
 
         segments = split_into_segments_torch(data, device=DEVICE)
         segments_normalized = std_normalizer_torch(segments)
-        
+
         RNN_precomputed_all = full_evaluation(
                     segments_normalized, args.model_path, DEVICE, 
                     return_midpoints=True, loaded_models=None, grad_flag=False,
@@ -434,6 +441,9 @@ if __name__ == '__main__':
     # Required arguments
     parser.add_argument('model_path', nargs='+', type=str,
                         help='Path to the models')
+
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     # Additional arguments
     parser.add_argument('--data-path', type=str,

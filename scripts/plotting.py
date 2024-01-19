@@ -116,7 +116,7 @@ def amp_measure_vs_far_plotting(
         else:
             fm_vals = np.dot(data, metric_coefs)
 
-        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL)/SMOOTHING_KERNEL, mode='same'),
+        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL/10)/SMOOTHING_KERNEL/10, mode='same'),
             axis=1,
             arr=fm_vals)
 
@@ -743,7 +743,7 @@ def make_roc_curves_smoothing_comparison(data,
     fm_vals_orig = fm_vals[:]
     for i_window, smoothing_window in enumerate(smoothing_windows):
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{smoothing_window}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{smoothing_window}.npy')
         if smoothing_window != 1:
             fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
                 axis=1,
@@ -842,6 +842,7 @@ def main(args):
     bias = model.layer.bias.data.cpu().numpy()[0]
     print('bias!:', bias)
 
+    print(f'Learned weights: {learned_dp_weights}')
     weights = []
 
     for i in range(5):
@@ -897,15 +898,15 @@ def main(args):
             data = (data - means) / stds
             data = data#[1000:]
             snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-            hrss = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_hrss.npz.npy')
+            # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
-            hrss_dict[tag] = hrss
+            # hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                             [snrs_dict[elem] for elem in X3],
                             model,
@@ -917,7 +918,7 @@ def main(args):
 
         if do_make_roc_curves: #roc curve
 
-            far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+            far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
             make_roc_curves([data_dict[elem] for elem in X3],
                                 [snrs_dict[elem] for elem in X3],
                                 model,
@@ -938,44 +939,44 @@ def main(args):
             #                     smoothing_window=SMOOTHING_KERNEL,
             #                     hrss=True)
 
-            # make the plot showing all the smoothing windows for a single class at once
-            for elem in X3:
-                make_roc_curves_smoothing_comparison(data_dict[elem],
-                                    snrs_dict[elem],
-                                    model,
-                                    far_hist,
-                                    elem,
-                                    args.plot_savedir,
-                                    f'ROC-plots_SNR_vary_smoothing_{elem}',
-                                    bias,
-                                    SMOOTHING_KERNEL_SIZES)
+            # # make the plot showing all the smoothing windows for a single class at once
+            # for elem in X3:
+            #     make_roc_curves_smoothing_comparison(data_dict[elem],
+            #                         snrs_dict[elem],
+            #                         model,
+            #                         far_hist,
+            #                         elem,
+            #                         args.plot_savedir,
+            #                         f'ROC-plots_SNR_vary_smoothing_{elem}',
+            #                         bias,
+            #                         SMOOTHING_KERNEL_SIZES)
 
 
-            # make the plot showing all the smoothing windows for a single class at once
-            for elem in X3:
-                make_roc_curves_smoothing_comparison(data_dict[elem],
-                                    snrs_dict[elem],
-                                    model,
-                                    far_hist,
-                                    elem,
-                                    args.plot_savedir,
-                                    f'ROC plots, SNR, vary smoothing, {elem}',
-                                    bias,
-                                    SMOOTHING_KERNEL_SIZES)
-                                    
+            # # make the plot showing all the smoothing windows for a single class at once
+            # for elem in X3:
+            #     make_roc_curves_smoothing_comparison(data_dict[elem],
+            #                         snrs_dict[elem],
+            #                         model,
+            #                         far_hist,
+            #                         elem,
+            #                         args.plot_savedir,
+            #                         f'ROC plots, SNR, vary smoothing, {elem}',
+            #                         bias,
+            #                         SMOOTHING_KERNEL_SIZES)
 
 
-                
+
+
 
     if do_fake_roc:
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         fake_roc_plotting(far_hist, args.plot_savedir)
 
 
     if do_3_panel_plot:
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_k{SMOOTHING_KERNEL}.npy')
+        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         metric_coefs = np.load(f'{args.data_predicted_path}/trained/final_metric_params.npy')
         norm_factors = np.load(f'{args.data_predicted_path}/trained/norm_factor_params.npy')
         means, stds = norm_factors[0], norm_factors[1]

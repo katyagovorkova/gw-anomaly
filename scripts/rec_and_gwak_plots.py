@@ -5,41 +5,26 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as st
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-import torch.optim as optim
 
-from quak_predict import quak_eval
-from helper_functions import mae_torch, freq_loss_torch
+from gwak_predict import quak_eval as gwak_eval
 from models import LinearModel
-from helper_functions import (
-    stack_dict_into_numpy,
-    stack_dict_into_numpy_segments,
-    compute_fars,
-    far_to_metric,
-    stack_dict_into_tensor
-)
+from helper_functions import stack_dict_into_tensor
+
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
     SEG_NUM_TIMESTEPS,
     SAMPLE_RATE,
     CLASS_ORDER,
-    SPEED,
     NUM_IFOS,
     IFO_LABELS,
     RECREATION_WIDTH,
     RECREATION_HEIGHT_PER_SAMPLE,
     RECREATION_SAMPLES_PER_PLOT,
-    SNR_VS_FAR_BAR,
-    SNR_VS_FAR_HORIZONTAL_LINES,
-    SNR_VS_FAR_HL_LABELS,
-    SEGMENT_OVERLAP,
-    HISTOGRAM_BIN_DIVISION,
-    HISTOGRAM_BIN_MIN,
     GPU_NAME,
-    FACTORS_NOT_USED_FOR_FM
-)
+    FACTORS_NOT_USED_FOR_FM,
+    MODELS_LOCATION
+    )
 DEVICE = torch.device(GPU_NAME)
 
 
@@ -186,7 +171,12 @@ def corner_plotting(
         np.save(f'{plot_savedir}/cph.npy', corner_plot_hist)
 
 
-def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, class_name):
+def recreation_plotting(
+        data_original,
+        data_recreated,
+        data_cleaned,
+        savedir,
+        class_name):
 
     ts = np.linspace(0, 1000 * SEG_NUM_TIMESTEPS /
                      SAMPLE_RATE, SEG_NUM_TIMESTEPS)
@@ -208,19 +198,21 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
     # make the plot showing only original, recreated for that class
 
     if RECREATION_SAMPLES_PER_PLOT > 1:
+
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
+        if data_cleaned is not None:
+            axs[j, k].plot(ts, data_cleaned[j, k, :],
+                           label='Signal', c='pink')
+
         for j in range(RECREATION_SAMPLES_PER_PLOT):
             for k in range(NUM_IFOS):
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, i, k, :]))
                 axs[j, k].plot(ts, orig_samps[j, k, :],
                                label='Signal + Noise', c='black')
-                axs[j, k].plot(ts, recreated_samps[j, i, k, :], label=f'{class_name}, mae:{mae:.2f}', c=colors[i])
-
-                if data_cleaned is not None:
-                    axs[j, k].plot(ts, data_cleaned[j, k, :],
-                                   label='Signal', c='pink')
+                axs[j, k].plot(ts, recreated_samps[j, i, k, :],
+                    label=f'{class_name}, mae:{mae:.2f}', c=colors[i])
 
                 axs[j, k].grid()
                 axs[j, k].set_title(IFO_LABELS[k])
@@ -229,9 +221,9 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                     axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
                 axs[j, k].set_xlabel('Time (ms)')
 
-        plt.tight_layout()
-        fig.savefig(f'{savedir}/one_to_one.pdf', dpi=300)
-        plt.close()
+            plt.tight_layout()
+            fig.savefig(f'{savedir}/one_to_one.pdf', dpi=300)
+            plt.clf()
     # make the plot showing original, recreated for all classes
 
     rename_map = {
@@ -248,18 +240,6 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
         for j in range(RECREATION_SAMPLES_PER_PLOT):
             for k in range(NUM_IFOS):
 
-                axs[j, k].plot(ts, orig_samps[j, k, :],
-                               label='Signal + Noise', c='black')
-                for l in range(len(CLASS_ORDER)):
-                    mae = np.mean(
-                        np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
-                    alpha = 1
-                    if CLASS_ORDER[l] != class_name:
-                        alpha = 0.5
-                    axs[j, k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha)
-                if data_cleaned is not None:
-                    axs[j, k].plot(ts, data_cleaned[j, k, :],
-                                   label='Signal', c='pink', alpha=0.8)
                 axs[j, k].grid()
                 axs[j, k].set_title(IFO_LABELS[k])
                 axs[j, k].legend()
@@ -267,51 +247,159 @@ def recreation_plotting(data_original, data_recreated, data_cleaned, savedir, cl
                     axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
                 axs[j, k].set_xlabel('Time (ms)')
 
-    else:
+                axs[j, k].plot(ts, orig_samps[j, k, :],
+                               label='Signal + Noise', c='black', alpha=0.55)
+
+                for l_name, l_color in zip(['bbh', 'sglf', 'sghf'],
+                        ['steelblue', 'salmon', 'goldenrod']):
+                    l = CLASS_ORDER.index(l_name)
+                    mae = np.mean(
+                        np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
+                    alpha = 1
+                    if l_name != class_name:
+                        alpha = 0.5
+                    axs[j, k].plot(ts, recreated_samps[j, l, k, :],
+                        label=f'{rename_map[l_name]}, mae: {mae:.2f}',
+                        c=l_color)
+
+                    if data_cleaned is not None:
+                        axs[j, k].plot(ts, data_cleaned[j, k, :],
+                                       label='Signal', c='pink', alpha=0.8)
+
+        plt.tight_layout()
+        fig.savefig(f'{savedir}/recreation_{class_name}_sig.pdf', dpi=300)
+
         fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
             RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
+        for j in range(RECREATION_SAMPLES_PER_PLOT):
+            for k in range(NUM_IFOS):
+                axs[j, k].grid()
+                axs[j, k].set_title(IFO_LABELS[k])
+                axs[j, k].legend()
+                if k == 0:
+                    axs[j, k].set_ylabel(r'Whitened Strain, $\sigma = 1$')
+                axs[j, k].set_xlabel('Time (ms)')
 
+                axs[j, k].plot(ts, orig_samps[j, k, :],
+                               label='Signal + Noise', c='black', alpha=0.55)
+
+                for l_name, l_color in zip(['background', 'glitches'],
+                    ['purple', 'darkgreen']):
+                    l = CLASS_ORDER.index(l_name)
+                    mae = np.mean(
+                        np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
+                    alpha = 1
+                    if l_name != class_name:
+                        alpha = 0.5
+                    axs[j, k].plot(ts, recreated_samps[j, l, k, :],
+                        label=f'{rename_map[l_name]}, mae: {mae:.2f}',
+                        c=l_color)
+
+                    if data_cleaned is not None:
+                        axs[j, k].plot(ts, data_cleaned[j, k, :],
+                                       label='Signal', c='pink', alpha=0.8)
+
+        plt.tight_layout()
+        fig.savefig(f'{savedir}/recreation_{class_name}_bkg.pdf', dpi=300)
+
+    else:
         j = 0
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+            RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
         for k in range(NUM_IFOS):
+
             if data_cleaned is not None:
                 axs[k].plot(ts, orig_samps[
-                            j, k, :], label='Signal + Noise, AE input', c='black', alpha=0.55, linewidth=1.3)
+                            j, k, :], label='Signal + Noise, AE input', c='black',
+                            alpha=0.55)
             else:
                 # for glitch, bkg samples
                 axs[k].plot(ts, orig_samps[j, k, :],
-                            label='Signal + Noise, AE input', c='black')
+                            label='Signal + Noise, AE input', c='black', alpha=0.55)
             if data_cleaned is not None:
                 axs[k].plot(ts, data_cleaned[j, k, :],
-                            label='Signal', c='sienna', linewidth=2)
-            for l in range(len(CLASS_ORDER)):
+                            label='Signal', c='pink')
+
+            for l_name, l_color in zip(['bbh', 'sglf', 'sghf'],
+                        ['steelblue', 'salmon', 'goldenrod']):
+                l = CLASS_ORDER.index(l_name)
                 mae = np.mean(
                     np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
                 alpha = 1
                 linewidth = 2.1
-                if CLASS_ORDER[l] != class_name:
+                if l_name != class_name:
                     alpha = 0.75
                     linewidth = 1.45
-                axs[k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[CLASS_ORDER[l]]}, mae: {mae:.2f}', c=colors[l], alpha=alpha, linewidth=linewidth)
+                axs[k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[l_name]}, mae: {mae:.2f}',
+                    c=l_color)
 
-            axs[k].grid()
-            axs[k].set_title(IFO_LABELS[k], fontsize=20)
-            axs[k].legend(loc='upper left')
-            if k == 0:
-                axs[k].set_ylabel(
-                    r'Whitened Strain, $\sigma = 1$', fontsize=20)
-            axs[k].grid()
-            axs[k].set_xlabel('Time (ms)', fontsize=20)
+                axs[k].grid()
+                axs[k].set_title(IFO_LABELS[k], fontsize=20)
+                axs[k].legend(loc='upper left')
+                if k == 0:
+                    axs[k].set_ylabel(
+                        r'Whitened Strain, $\sigma = 1$', fontsize=20)
+                axs[k].grid()
+                axs[k].set_xlabel('Time (ms)', fontsize=20)
 
-    plt.tight_layout()
-    fig.savefig(f'{savedir}/recreation_{class_name}.pdf', dpi=300)
-    plt.close()
+        plt.tight_layout()
+        fig.savefig(f'{savedir}/recreation_{class_name}_sig.pdf', dpi=300)
+
+        fig, axs = plt.subplots(RECREATION_SAMPLES_PER_PLOT, 2, figsize=(
+                RECREATION_WIDTH, RECREATION_SAMPLES_PER_PLOT * RECREATION_HEIGHT_PER_SAMPLE))
+
+        for k in range(NUM_IFOS):
+
+            if data_cleaned is not None:
+                axs[k].plot(ts, orig_samps[
+                            j, k, :], label='Signal + Noise, AE input',
+                            c='black', alpha=0.55)
+            else:
+                # for glitch, bkg samples
+                axs[k].plot(ts, orig_samps[j, k, :],
+                            label='Signal + Noise, AE input', c='black', alpha=0.55,)
+            if data_cleaned is not None:
+                axs[k].plot(ts, data_cleaned[j, k, :],
+                            label='Signal', c='pink')
+
+            for l_name, l_color in zip(['background', 'glitches'],
+                    ['purple', 'darkgreen']):
+                l = CLASS_ORDER.index(l_name)
+
+                mae = np.mean(
+                    np.abs(orig_samps[j, k, :] - recreated_samps[j, l, k, :]))
+                alpha = 1
+                linewidth = 2.1
+                if l_name != class_name:
+                    alpha = 0.75
+                    linewidth = 1.45
+                axs[k].plot(ts, recreated_samps[j, l, k, :], label=f'{rename_map[l_name]}, mae: {mae:.2f}',
+                    c=l_color)
+
+                axs[k].grid()
+                axs[k].set_title(IFO_LABELS[k], fontsize=20)
+                axs[k].legend(loc='upper left')
+                if k == 0:
+                    axs[k].set_ylabel(
+                        r'Whitened Strain, $\sigma = 1$', fontsize=20)
+                axs[k].grid()
+                axs[k].set_xlabel('Time (ms)', fontsize=20)
+
+        plt.tight_layout()
+        fig.savefig(f'{savedir}/recreation_{class_name}_bkg.pdf', dpi=300)
 
 
 def main(args):
 
+    model_paths = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
+    fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
-        args.fm_model_path, map_location=GPU_NAME))
+        fm_model_path, map_location=GPU_NAME))
     weight = (model.layer.weight.data.cpu().numpy()[0])
     weights = []
     for i in range(5):
@@ -320,8 +408,6 @@ def main(args):
         arr[3 * i + 1] = weight[3 * i + 1]
         arr[3 * i + 3] = weight[3 * i + 3]
         weights.append(arr[:-1])  # cut out pearson
-
-    model_paths = args.model_path
 
     loss_values_SNR = dict()
     loss_values = dict()
@@ -341,7 +427,7 @@ def main(args):
             datum = datum / stds
             dat_clean = dat_clean / stds
             datum = torch.from_numpy(datum).float().to(DEVICE)
-            evals = quak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
+            evals = gwak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
             loss_values_SNR[class_label][SNR_ind] = evals['freq_loss']
             original = []
             recreated = []
@@ -361,7 +447,7 @@ def main(args):
             stds = np.std(datum, axis=-1)[:, :, np.newaxis]
             datum = datum / stds
             datum = torch.from_numpy(datum).float().to(DEVICE)
-            evals = quak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
+            evals = gwak_eval(datum, model_paths, device=DEVICE, reduce_loss=False)
             loss_values[class_label] = evals['freq_loss']
             try:
                 os.makedirs(f'{args.savedir}/{class_label}/')
@@ -380,37 +466,37 @@ def main(args):
                                 f'{args.savedir}/{class_label}/',
                                 class_label)
 
-    SNR_ind = 4
-    corner_plot_data = [0] * len(CLASS_ORDER)
+    # SNR_ind = 4
+    # corner_plot_data = [0] * len(CLASS_ORDER)
 
-    for class_label in CLASS_ORDER:
-        class_index = CLASS_ORDER.index(class_label)
-        if class_label in ['sghf', 'sglf', 'bbh']:
-            corner_plot_data[class_index] = loss_values_SNR[
-                class_label][SNR_ind]
+    # for class_label in CLASS_ORDER:
+    #     class_index = CLASS_ORDER.index(class_label)
+    #     if class_label in ['sghf', 'sglf', 'bbh']:
+    #         corner_plot_data[class_index] = loss_values_SNR[
+    #             class_label][SNR_ind]
 
-        else:
-            assert class_label in ['glitches', 'background']
-            corner_plot_data[class_index] = loss_values[class_label]
-        corner_plot_data[class_index] = stack_dict_into_tensor(
-            corner_plot_data[class_index]).cpu().numpy()  # [p]#[:, ]
-        means, stds_ = np.load(
-            'output/trained/norm_factor_params.npy')
-        corner_plot_data[class_index] = np.delete(corner_plot_data[class_index], FACTORS_NOT_USED_FOR_FM, -1)
-        corner_plot_data[class_index] = (
-            corner_plot_data[class_index] - means[:-1]) / stds_[:-1]
-        all_dotted = np.zeros(
-            (len(corner_plot_data[class_index]), len(CLASS_ORDER)))
-        for i in range(len(CLASS_ORDER)):
-            dotted = np.dot(corner_plot_data[class_index], weights[i])
-            all_dotted[:, i] = dotted
-        corner_plot_data[class_index] = all_dotted
-        corner_plot_data[class_index] = corner_plot_data[class_index][
-            np.random.permutation(len(corner_plot_data[class_index]))]
-        print(corner_plot_data[class_index].shape)
-    print(corner_plot_data)
-    print('class order', CLASS_ORDER)
-    corner_plotting(corner_plot_data, CLASS_ORDER, f'{args.savedir}', SNR_ind=SNR_ind, loglog=False, enforce_lim=False)
+    #     else:
+    #         assert class_label in ['glitches', 'background']
+    #         corner_plot_data[class_index] = loss_values[class_label]
+    #     corner_plot_data[class_index] = stack_dict_into_tensor(
+    #         corner_plot_data[class_index]).cpu().numpy()  # [p]#[:, ]
+    #     means, stds_ = np.load(
+    #         'output/trained/norm_factor_params.npy')
+    #     corner_plot_data[class_index] = np.delete(corner_plot_data[class_index], FACTORS_NOT_USED_FOR_FM, -1)
+    #     corner_plot_data[class_index] = (
+    #         corner_plot_data[class_index] - means[:-1]) / stds_[:-1]
+    #     all_dotted = np.zeros(
+    #         (len(corner_plot_data[class_index]), len(CLASS_ORDER)))
+    #     for i in range(len(CLASS_ORDER)):
+    #         dotted = np.dot(corner_plot_data[class_index], weights[i])
+    #         all_dotted[:, i] = dotted
+    #     corner_plot_data[class_index] = all_dotted
+    #     corner_plot_data[class_index] = corner_plot_data[class_index][
+    #         np.random.permutation(len(corner_plot_data[class_index]))]
+    #     print(corner_plot_data[class_index].shape)
+    # print(corner_plot_data)
+    # print('class order', CLASS_ORDER)
+    # corner_plotting(corner_plot_data, CLASS_ORDER, f'{args.savedir}', SNR_ind=SNR_ind, loglog=False, enforce_lim=False)
 
 
 if __name__ == '__main__':
@@ -421,8 +507,12 @@ if __name__ == '__main__':
                         type=str)
     parser.add_argument('model_path', help='path to the models',
                         nargs='+', type=str)
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
     parser.add_argument('fm_model_path', help='path to the final metric model',
                         type=str)
+    parser.add_argument('from_saved_fm_model', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
     parser.add_argument('savedir', help='path to save the plots',
                         type=str)
 

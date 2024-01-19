@@ -3,7 +3,6 @@ import argparse
 import numpy as np
 
 import torch
-import torch.nn as nn
 
 from models import LinearModel
 from evaluate_data import full_evaluation
@@ -20,7 +19,8 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
     SMOOTHING_KERNEL_SIZES,
     DO_SMOOTHING,
-    GPU_NAME
+    GPU_NAME,
+    MODELS_LOCATION
 )
 
 
@@ -28,7 +28,19 @@ def main(args):
 
     DEVICE = torch.device(f'cuda:{args.gpu}')
 
-    if args.metric_coefs_path is not None:
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
+    fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+
+    metric_coefs_path = args.metric_coefs_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.metric_coefs_path))
+
+    norm_factor_path = args.norm_factor_path if not args.from_saved_fm_model else \
+        os.path.join(MODELS_LOCATION, os.path.basename(args.norm_factor_path))
+
+    if metric_coefs_path is not None:
         # initialize histogram
         n_bins = 2 * int(HISTOGRAM_BIN_MIN / HISTOGRAM_BIN_DIVISION)
 
@@ -44,15 +56,15 @@ def main(args):
 
 
         # compute the dot product and save that instead
-        metric_vals = np.load(args.metric_coefs_path)
-        norm_factors = np.load(args.norm_factor_path)
+        metric_vals = np.load(metric_coefs_path)
+        norm_factors = np.load(norm_factor_path)
         norm_factors_cpu = norm_factors[:] #copy
         metric_vals = torch.from_numpy(metric_vals).float().to(DEVICE)
         norm_factors = torch.from_numpy(norm_factors).float().to(DEVICE)
 
         model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         model.load_state_dict(torch.load(
-            args.fm_model_path, map_location=f'cuda:{args.gpu}'))
+            fm_model_path, map_location=f'cuda:{args.gpu}'))
 
         learned_weights = model.layer.weight.detach().cpu().numpy()
         learned_bias = model.layer.bias.detach().cpu().numpy()
@@ -71,7 +83,7 @@ def main(args):
             if RETURN_INDIV_LOSSES:
                 model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
                 model.load_state_dict(torch.load(
-                    args.fm_model_path, map_location=f'cuda:{args.gpu}'))
+                    fm_model_path, map_location=f'cuda:{args.gpu}'))
                 vals = model(vals).detach()
             else:
                 vals = torch.matmul(vals, metric_vals)
@@ -154,21 +166,21 @@ def main(args):
             # Determine the dimensions of the output array
             n_chunks = len(important_points)
             chunk_length = 2 * window_size + 1
-            
+
             # Initialize an empty array to store the chunks
             chunks = np.zeros((2, n_chunks, chunk_length))
-            
+
             for idx, point in enumerate(important_points):
                 # Define the start and end points for extraction
                 start = max(0, point - window_size)
                 end = min(time_series.shape[1], point + window_size + 1)
-                
+
                 # Handle edge cases
                 extracted_start = window_size - (point - start)
                 extracted_end = extracted_start + (end - start)
-                
+
                 chunks[:, idx, extracted_start:extracted_end] = time_series[:, start:end]
-            
+
             return chunks
 
         for timeslide_num in range(1, n_timeslides + 1):
@@ -193,8 +205,8 @@ def main(args):
             timeslide = timeslide[:, start_point:start_point + reduced_len]
 
             timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
-            final_values = full_evaluation(
-                timeslide[None, :, :], args.model_folder_path, DEVICE)
+            final_values, _ = full_evaluation(
+                timeslide[None, :, :], model_path, DEVICE)
             print(final_values.shape)
             print('saving, individually')
             means, stds = torch.mean(
@@ -202,7 +214,7 @@ def main(args):
             means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()
             np.save(f'{args.save_normalizations_path}/normalization_params_{timeslide_num}.npy', np.stack([means, stds], axis=0))
             final_values = final_values.detach().cpu().numpy()
-            if True: 
+            if False:
                 FAR_2days = -1.617 #lowest FAR bin we have
                 norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
                 fm_model_path = (f"/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
@@ -223,7 +235,7 @@ def main(args):
                     scaled_evals.append(scaled_eval[0, :])
                     elem = torch.from_numpy(elem).to(DEVICE)
                     scores.append(fm_model(elem).detach().cpu().numpy())# - bias_value)
-                
+
                 scores = np.array(scores)
                 scaled_evals = np.array(scaled_evals)
 
@@ -234,7 +246,7 @@ def main(args):
 
                 #extract important timeslides with indices
                 important_timeslide = extract_chunks(timeslide, indices, window_size=1024)
-                
+
                 #print(indices, filtered_final_score)
                 #print("timeslide shape", important_timeslide.shape)
                 #print("filtered_final_score", filtered_final_score.shape)
@@ -257,8 +269,11 @@ if __name__ == '__main__':
     parser.add_argument('save_path', type=str,
                         help='Folder to which save the timeslides')
 
-    parser.add_argument('model_folder_path', nargs='+', type=str,
-                        help='Path to the folder containing the models')
+    parser.add_argument('model_path', nargs='+', type=str,
+                        help='Path to the models')
+
+    parser.add_argument('from_saved_models', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     # Additional arguments
     parser.add_argument('--data-path', type=str, nargs='+',
@@ -266,6 +281,9 @@ if __name__ == '__main__':
 
     parser.add_argument('--fm-model-path', type=str,
                         help='Final metric model')
+
+    parser.add_argument('--from-saved-fm-model', type=bool,
+                        help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.')
 
     parser.add_argument('--metric-coefs-path', type=str, default=None,
                         help='Pass in path to metric coefficients to compute dot product')

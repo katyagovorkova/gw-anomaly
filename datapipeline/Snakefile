@@ -1,0 +1,109 @@
+from config import VERSION, PERIOD
+
+signalclasses = ['bbh', 'sglf', 'sghf']
+backgroundclasses = ['background', 'glitches']
+modelclasses = signalclasses + backgroundclasses
+fm_training_classes = [
+    'bbh_fm_optimization',
+    'sghf_fm_optimization',
+    'sglf_fm_optimization',
+    'supernova_fm_optimization',
+    'wnbhf_fm_optimization',
+    'wnblf_fm_optimization'
+    ]
+dataclasses = fm_training_classes+[
+    'wnblf',
+    'wnbhf',
+    'supernova',
+    'timeslides',
+    'bbh_varying_snr',
+    'sghf_varying_snr',
+    'sglf_varying_snr',
+    'wnbhf_varying_snr',
+    'wnblf_varying_snr',
+    'supernova_varying_snr']
+
+wildcard_constraints:
+    modelclass = '|'.join([x for x in modelclasses]),
+    dataclass = '|'.join([x for x in dataclasses + modelclasses])
+
+
+rule find_valid_segments:
+    input:
+        hanford_path = 'data/{period}_Hanford_segments.json',
+        livingston_path = 'data/{period}_Livingston_segments.json'
+    params:
+        save_path = 'output/{period}_intersections.npy'
+    script:
+        'scripts/segments_intersection.py'
+
+rule run_omicron:
+    params:
+        user_name = 'katya.govorkova',
+        folder = f'output/omicron/'
+    shell:
+        'mkdir -p {params.folder}; '
+        'ligo-proxy-init {params.user_name}; '
+        'python3 scripts/run_omicron.py {params.intersections} {params.folder}'
+
+rule fetch_site_data:
+    input:
+        omicron = rules.run_omicron.params.folder,
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period=PERIOD)
+    output:
+        'tmp/dummy_{version}_{site}.txt'
+    shell:
+        'touch {output}; '
+        'python3 scripts/fetch_data.py {input.omicron} {input.intersections}\
+            --site {wildcards.site}'
+
+rule fetch_timeslide_data:
+    """
+    # 1238166018 -- 1 april 2019
+    # 1243382418 -- 1 june 2019
+    # 1248652818 -- 1 august 2019
+    # 1253977218 -- 1 oct 2019
+    """
+    params:
+        start = 1248652818,
+        stop = 1253977218
+    shell:
+        'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
+
+rule generate_data:
+    input:
+        omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period=PERIOD),
+    params:
+        dependencies = expand(rules.fetch_site_data.output,
+                                site=['L1', 'H1'],
+                                version=VERSION)
+    output:
+        file = 'output/{version}/data/{dataclass}.npz'
+    shell:
+        'python3 scripts/generate.py {input.omicron} {output.file} \
+            --stype {wildcards.dataclass} \
+            --intersections {input.intersections} \
+            --period {PERIOD}'
+
+rule upload_data:
+    input:
+        expand(rules.generate_data.output.file,
+               dataclass='{dataclass}',
+               version='{version}')
+    output:
+        '/home/katya.govorkova/gwak/{version}/data/{dataclass}.npz'
+    shell:
+        'mkdir -p /home/katya.govorkova/gwak/{wildcards.version}/data/; '
+        'cp {input} {output}; '
+
+rule validate_data:
+    input:
+        expand(rules.upload_data.output,
+               dataclass=modelclasses+dataclasses,
+               version=VERSION)
+    shell:
+        'mkdir -p data/{VERSION}/; '
+        'python3 scripts/validate_data.py {input}'

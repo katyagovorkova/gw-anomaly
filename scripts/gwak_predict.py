@@ -2,7 +2,7 @@ import os
 import numpy as np
 import argparse
 import torch
-import time
+
 from helper_functions import mae_torch, freq_loss_torch
 from models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT, LSTM_AE_SPLIT_precompute, LSTM_AE_SPLIT_use_precomputed
 
@@ -13,7 +13,6 @@ from config import (NUM_IFOS,
                     SEG_NUM_TIMESTEPS,
                     BOTTLENECK,
                     MODEL,
-                    FACTOR,
                     GPU_NAME,
                     RECREATION_LIMIT)
 
@@ -97,6 +96,7 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None, gr
                         freq_loss_torch(data, model(data).detach())
                 
         elif not reduce_loss:
+
             if not grad_flag:
                 with torch.no_grad():
                     #print("no grad!")
@@ -113,10 +113,12 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None, gr
                 loss['freq_loss'][os.path.basename(dpath)[:-3]] = \
                     freq_loss_torch(data, model(data).detach())
 
+
             loss['original'][os.path.basename(
                 dpath)[:-3]] = data[:RECREATION_LIMIT].cpu().numpy()
             loss['recreated'][os.path.basename(
                 dpath)[:-3]] = model(data[:RECREATION_LIMIT]).detach().cpu().numpy()
+
     return loss
 
 
@@ -124,10 +126,13 @@ def main(args):
 
     DEVICE = torch.device(GPU_NAME)
 
+    model_path = args.model_path if not args.from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+
     # load the data
     data = np.load(args.test_data)['data']
     data = torch.from_numpy(data).float().to(DEVICE)
-    loss = quak_eval(data, args.model_path, DEVICE,
+    loss = quak_eval(data, model_path, DEVICE,
                      reduce_loss=args.reduce_loss)
 
     if args.reduce_loss:
@@ -153,6 +158,8 @@ if __name__ == '__main__':
 
     parser.add_argument('--model-path', help='Required path to trained model',
                         nargs='+', type=str)
+    parser.add_argument('--from-saved-models', help='If true, use the pre-trained models from MODELS_LOCATION in config, otherwise use models trained with the pipeline.',
+                        type=bool)
     args = parser.parse_args()
     args.reduce_loss = args.reduce_loss == "True"
 
