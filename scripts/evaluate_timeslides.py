@@ -344,7 +344,7 @@ def main(args):
             save_full_timeslide_readout = True
             if save_full_timeslide_readout:
 
-                FAR_2days = -0.5 # lowest FAR bin we want to worry about
+                FAR_2days = -2 # lowest FAR bin we want to worry about
 
                 # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
                 final_values_slx = (final_values - mean_norm)/std_norm
