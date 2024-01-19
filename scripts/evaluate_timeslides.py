@@ -394,16 +394,6 @@ def main(args):
                     if len(filtered_final_score) > 0:
                         computed_hist = np.histogram(filtered_final_score, bins=1000, range=(-20, 20))[0]
 
-            if 0:       
-                if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
-                    track_data = np.zeros(1)
-                    np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
-                tracked_sofar = np.load(f"{args.save_evals_path}/livetime_tracker.npy")
-                np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)
-
-                # save as a numpy file, with the index of timeslide_num
-                np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
-
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
             if computed_hist is not None:
                 timeslide_hist += computed_hist
