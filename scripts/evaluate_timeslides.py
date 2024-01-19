@@ -221,7 +221,6 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
     return fill_strains, edge_check_passed
 
 def main(args):
-
     DEVICE = torch.device(f'cuda:{args.gpu}')
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
@@ -309,6 +308,7 @@ def main(args):
         gwak_models = load_gwak_models(args.model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
         for timeslide_num in range(1, n_timeslides + 1):
+            computed_hist = None
             if timeslide_num != 1: print(f"throughput {3600/(time.time()-ts):.2f} Hz")
             ts = time.time()
 
@@ -344,7 +344,7 @@ def main(args):
             save_full_timeslide_readout = True
             if save_full_timeslide_readout:
 
-                FAR_2days = -1.67 # lowest FAR bin we want to worry about
+                FAR_2days = -0.5 # lowest FAR bin we want to worry about
 
                 # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
                 final_values_slx = (final_values - mean_norm)/std_norm
@@ -358,68 +358,57 @@ def main(args):
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
                
-                if len(indices) == 0: continue # just start the next timeslide, no interesting events
-                
-                indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
-                filtered_final_score = smoothed_scores.index_select(0, indices)
-                filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
-
-                indices_ = indices.detach().cpu().numpy()
-
-                # extract important timeslides with indices
-                timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num, 
-                                                    midpoints[indices_],
-                                                    DEVICE, window_size=1024) # 0.25 seconds on either side
-                                                                              # so it should come out to desired 0.5
-                filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
-                filtered_final_score = filtered_final_score.detach().cpu().numpy()
-
-                filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
-                filtered_final_score = filtered_final_score[edge_check_filter]
-                timeslide_chunks = timeslide_chunks[edge_check_filter]
-
-                #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
-                if heuristics_tests:
-                    combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
-                    passed_heuristics = []
-                    for i, strain_segment in enumerate(timeslide_chunks):
-                        passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
-                                                                      short_relation, long_relation))
-                        
-                    #print("passed heuristics:", passed_heuristics)
-
-                    filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
-                    filtered_final_score = filtered_final_score[passed_heuristics]
-                    timeslide_chunks = timeslide_chunks[passed_heuristics]
-                #print(important_timeslide.shape)
-                #print(filtered_final_scaled_evals.shape, filtered_final_score.shape, timeslide_chunks.shape)
-                #assert 0
-
-
-                
-                if len(indices_) > 0:
-                    #print(len(indices_))
-                    np.savez(f'{args.save_evals_path}/timeslide_evals_full_{timeslide_num}.npz',
-                                                final_scaled_evals=filtered_final_scaled_evals,
-                                                metric_score = filtered_final_score,
-                                                timeslide_data = timeslide_chunks,
-                                                time_event_ocurred = midpoints[indices_])
-
-                #np.save(f'{args.save_evals_path}/sanity_timeslide_data.npy', strain_data)
-                #print("event score", filtered_final_score)
-                #print("gwak stats", filtered_final_scaled_evals)
-                #print("saving folder", args.save_evals_path)
-                
-                #assert 0
+                if len(indices) != 0:  # just start the next timeslide, no interesting events
                     
-            if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
-                track_data = np.zeros(1)
-                np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
-            tracked_sofar = np.load(f"{args.save_evals_path}/livetime_tracker.npy")
-            np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)
+                    indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+                    filtered_final_score = smoothed_scores.index_select(0, indices)
+                    filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
-            # save as a numpy file, with the index of timeslide_num
-            np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
+                    indices_ = indices.detach().cpu().numpy()
+
+                    # extract important timeslides with indices
+                    timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num, 
+                                                        midpoints[indices_],
+                                                        DEVICE, window_size=1024) # 0.25 seconds on either side
+                                                                                # so it should come out to desired 0.5
+                    filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
+                    filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
+                    filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
+                    filtered_final_score = filtered_final_score[edge_check_filter]
+                    timeslide_chunks = timeslide_chunks[edge_check_filter]
+
+                    #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
+                    if heuristics_tests:
+                        combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
+                        passed_heuristics = []
+                        for i, strain_segment in enumerate(timeslide_chunks):
+                            passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
+                                                                        short_relation, long_relation))
+                            
+                        #print("passed heuristics:", passed_heuristics)
+
+                        #filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
+                        filtered_final_score = filtered_final_score[passed_heuristics]
+                    
+                    if len(filtered_final_score) > 0:
+                        computed_hist = np.histogram(filtered_final_score, bins=1000, range=(-20, 20))[0]
+
+            if 0:       
+                if not os.path.exists(f"{args.save_evals_path}/livetime_tracker.npy"):
+                    track_data = np.zeros(1)
+                    np.save(f"{args.save_evals_path}/livetime_tracker.npy", track_data)
+                tracked_sofar = np.load(f"{args.save_evals_path}/livetime_tracker.npy")
+                np.save(f"{args.save_evals_path}/livetime_tracker.npy", tracked_sofar + reduced_len/SAMPLE_RATE)
+
+                # save as a numpy file, with the index of timeslide_num
+                np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values.detach().cpu().numpy())
+
+            timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
+            if computed_hist is not None:
+                timeslide_hist += computed_hist
+            timeslide_hist[-1] += 3590
+            np.save(f"{args.save_evals_path}_timeslide_hist.npy", timeslide_hist)
 
         # got out of the for loop, check why
         # either (likely) the for loop completed, and the desired number of timeslides was done
@@ -463,6 +452,10 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
+    histogram = np.zeros(1000)
+    if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
+        np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
+
     folder_path = args.data_path
     print(folder_path)
     #p = np.random.permutation(len(os.listdir(folder_path)))
@@ -477,7 +470,7 @@ if __name__ == '__main__':
         if filename.endswith('.npy'):
 
             args.data_path = os.path.join(folder_path, filename)
-            args.save_evals_path = f"{save_evals_path}/{filename[:-4]}/"
-            os.makedirs(args.save_evals_path, exist_ok=True)
+            #args.save_evals_path = f"{save_evals_path}"
+            #os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
             print(f'Finished running on {filename}')
