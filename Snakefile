@@ -41,7 +41,7 @@ rule generate_timeslides_for_far:
         data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
     output:
         save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
-        log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
+        log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
         'mkdir -p {output.save_evals_path}; '
         'python3 scripts/evaluate_timeslides.py {params.model_path} {params.from_saved_models} \
