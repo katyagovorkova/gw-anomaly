@@ -270,6 +270,12 @@ def main(args):
     initial_roll = 0
     while not_finished:
         data = np.load(args.data_path)
+        if not torch.is_tensor(data):
+            data = torch.from_numpy(data).to(DEVICE)
+        data_reduction = 2
+        data = data[:, :data.shape[1]//data_reduction]
+        total_data_time = data.shape[1] // SAMPLE_RATE
+        
         reduced_len = (data.shape[1] // 1000) * 1000
         data = data[:, :reduced_len]
 
@@ -284,8 +290,7 @@ def main(args):
         print('Number of timeslides:', n_timeslides)
 
 
-        if not torch.is_tensor(data):
-            data = torch.from_numpy(data).to(DEVICE)
+        
         data = data[None, :, :]
         assert data.shape[1] == 2
         clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
@@ -309,7 +314,7 @@ def main(args):
 
         for timeslide_num in range(1, n_timeslides + 1):
             computed_hist = None
-            if timeslide_num != 1: print(f"throughput {3600/(time.time()-ts):.2f} Hz")
+            if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
             ts = time.time()
 
             if timeslide_num * roll_amount > sample_length * SAMPLE_RATE:
@@ -397,7 +402,7 @@ def main(args):
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
             if computed_hist is not None:
                 timeslide_hist += computed_hist
-            timeslide_hist[-1] += 3590
+            timeslide_hist[-1] += total_data_time
             np.save(f"{args.save_evals_path}_timeslide_hist.npy", timeslide_hist)
 
         # got out of the for loop, check why

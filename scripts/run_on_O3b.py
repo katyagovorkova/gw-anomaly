@@ -9,6 +9,8 @@ from models import LinearModel, GwakClassifier
 from evaluate_data import full_evaluation
 import json
 import matplotlib
+from torch.nn.functional import conv1d
+
 from config import (
     CHANNEL,
     GPU_NAME,
@@ -16,25 +18,208 @@ from config import (
     SAMPLE_RATE,
     BANDPASS_HIGH,
     BANDPASS_LOW,
-    FACTORS_NOT_USED_FOR_FM
+    FACTORS_NOT_USED_FOR_FM,
+    MODELS_LOCATION
     )
-from helper_functions import far_to_metric, compute_fars
+from helper_functions import far_to_metric, compute_fars, load_gwak_models
 DEVICE = torch.device(GPU_NAME)
+from scipy.signal import welch
+heuristics_tests = True
+if heuristics_tests: #define the heuristic test helper functions
+    def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+        # works for one window at a time
+        Hs = H[H_start:H_end]
+        minval = 1
+        for shift in range(-maxshift, maxshift):
+            Ls = L[H_start+shift:H_end+shift]
+            #minval = min(pearsonr(Hs, Ls)[0], minval)
+            p = pearsonr(Hs, Ls)[0]
+            if p < minval:
+                minval = p
+                shift_idx = shift
+
+        return minval, shift_idx
+
+    def compute_signal_strength(x):
+        psd = welch(x, axis=1)[1]
+        HLS = np.log(np.sum(psd[0]))
+        LLS = np.log(np.sum(psd[1]))
+        return (HLS+LLS)/2
+
+    def compute_signal_strength_chop(x, y):
+        psd0 = welch(x)[1]
+        psd1 = welch(y)[1]
+        HLS = np.log(np.sum(psd0))
+        LLS = np.log(np.sum(psd1))
+        return (HLS+LLS)/2
+
+    def make_split_idxs(duration, seglen=200, overlap=50):
+        top = seglen
+        splits = []
+        while top < duration:
+            splits.append([top-seglen, top])
+            top += overlap
+        return splits
+
+    def parse_strain(x):
+        # take strain, compute the long sig strenght & pearson
+        # split it up, do the same thing for short
+        long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
+        long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
 
 
-def clustering(x, bar=5*4096/SEGMENT_OVERLAP):
+        split_idxs = make_split_idxs(len(x[0]))[1:-1] # cut out ends to shifting can happen there
+        short_pearsons = []
+        short_sig_strengths = []
+        for split in split_idxs:
+            start, end = split
 
-    # 5 second spacing between events
+            pearson, shift_idx = shifted_pearson(x[0], x[1], start, end)
+            sig_strength = compute_signal_strength_chop(x[0, start:end], x[1, start+shift_idx:end+shift_idx] )
 
+            short_pearsons.append(pearson)
+            short_sig_strengths.append(sig_strength)
+
+        short_pearsons = np.array(short_pearsons)
+        short_sig_strengths = np.array(short_sig_strengths)
+
+        return [long_sig_strength, long_pearson], [short_sig_strengths, short_pearsons]
+
+    def combine_freqcorr(x):
+        # x shape is (N, 16)
+        new = np.zeros((x.shape[0], 11))
+        jump = 0
+        for i in range(15):
+            if i % 3 != 2:
+                new[:, i-jump] = x[:, i]
+            else:
+                jump += 1
+                new[:, -2] += x[:, i]
+
+        new[:, -1] = x[:, -1]
+
+        return new
+
+    def compute_required_pearson(strens, relation):
+        # relation is [:, 0] strengths, [:, 1] pearsons
+        required_pearsons = []
+        flag = False
+        if not isinstance(strens, np.ndarray) and not type(strens) is list :
+            strens = [strens]
+            flag = True
+        for stren in strens:
+            idx = np.searchsorted(relation[:, 0], stren)
+            if idx == len(relation[:, 0]):
+                required_pearsons.append(-1)
+            else:
+                required_pearsons.append(relation[idx, 1])
+        if flag:
+            return required_pearsons[0]
+        return required_pearsons
+
+    def single_condition(required, actual, bar=0.15, debug=False):
+        # does it pass?
+        if debug:
+            print(f"required: {required}, actual: {actual}")
+        return  required + bar > actual
+
+    def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
+        # does it pass?
+        failed_count = 0
+        for i in range(len(required)):
+            if not single_condition(required[i], actual[i], debug=debug):
+                failed_count += 1
+
+        return failed_count / len(required) < failed_fraction
+
+    def pairwise_symmetry_condition(scores):
+        # does not include glitch feature
+        def functional(x, y):
+            #enforce  |x| >= |y|
+            x = abs(x)
+            y = abs(y)
+
+            if y > x:
+                x, y = y, x
+            # signal autoencoder feature shouldn't be significantly positive
+            return (x+1.5)/(y+1.5) - 1.5
+        passed = True
+        for pair in [[2, 3], [6, 7], [8, 9]]:
+            a, b = pair
+
+            if functional(scores[a], scores[b]) > 0:
+                passed = False
+
+        return passed
+
+    def joint_heuristic_test(strain, gwak_features, short_relation, long_relation):
+        long, short = parse_strain(strain)
+        # for the short range
+        short_required_pearson = compute_required_pearson(short[0], short_relation)
+
+        # for the long range
+        long_required_pearson = compute_required_pearson(long[0], long_relation)
+        return pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1])
+
+
+def event_clustering(indices, scores, spacing, device):
+    '''
+    Group the evaluations into events, i.e. treat a consecutive sequence
+    of low anomaly score as a single event
+    '''
+
+    clustered = []
+    idxs = indices.detach().cpu().numpy()
     cluster = []
-    cluster.append(x[0])
+    for i, elem in enumerate(idxs):
+        # to move onto next cluster
+        if i != 0:
+            dist = elem - idxs[i-1]
+            if dist > spacing:
+                #make a new cluster
+                clustered.append(cluster)
+                cluster = [] # and initiate a new one
+        cluster.append(elem)
+    clustered.append(cluster) # last one isn't captured, since we haven't moved on
+    final_points = []
+    for cluster in clustered:
+        # take the one with the lowest score (most significant)
+        bestscore = 10
+        bestval = None
+        for elem in cluster:
+            if scores[elem] < bestscore:
+                bestscore = scores[elem]
+                bestval = elem
+        final_points.append(bestval)
+    return torch.from_numpy(np.array(final_points)).int().to(device)
 
-    for i, point in enumerate(x[1:]):
-        if x[i] - x[i-1] > bar:
-            cluster.append(point)
+def extract_chunks(strain_data, timeslide_num, important_points, device, roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
+    '''
+    Important points are indicies into thestrain_data
+    '''
+    L_shift = timeslide_num*roll_amount
+    timeslide_len = strain_data.shape[1]
+    edge_check_passed = []
 
-    return cluster
+    fill_strains = np.zeros((len(important_points), 2, window_size*2))
+    for idx, point in enumerate(important_points):
+        # check that the point is not on the edge
+        edge_check_passed.append(abs(point - timeslide_len)% timeslide_len > window_size*2)
+        if abs(point - timeslide_len)% timeslide_len > window_size*2:
+            H_selection = strain_data[0, point-window_size:point+window_size]
 
+            # if the livingston points overflow, the modulo should bring them
+            # into the right location. also data is clipped //1000 * 1000
+            # which is divisible by 200, so it should work
+            L_start = (point-window_size+L_shift) % timeslide_len
+            L_end = (point+window_size+L_shift) % timeslide_len
+
+            L_selection = strain_data[1, L_start:L_end]
+
+            fill_strains[idx, 0, :] = H_selection
+            fill_strains[idx, 1, :] = L_selection
+
+    return fill_strains, edge_check_passed
 
 def whiten_bandpass_resample(
         start_point,
@@ -69,7 +254,107 @@ def whiten_bandpass_resample(
         
     return [strainH1, strainL1]
 
-def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=None):
+def get_evals(data_, model_path, from_saved_models, savedir, start_point):
+    # split the data into 1-hour chunks to fit in memory best
+    print(data_.shape)
+    N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
+    assert 0
+
+    for hour_split in range(N_one_hour_splits):
+        start = int(hour_split*SAMPLE_RATE*3600)
+        end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*3600))
+
+        data = data_[:, start:end]
+        DEVICE = torch.device(f'cuda:{args.gpu}')
+    model_path = model_path if not from_saved_models else \
+        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+    gwak_models = load_gwak_models(args.model_path, DEVICE, GPU_NAME)
+
+    orig_kernel = 50
+    kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
+    kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
+    kernel = kernel[None, :, :]
+
+    if heuristics_tests:
+        long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+        short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
+    norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+
+    fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+    fm_model.load_state_dict(torch.load(
+        fm_model_path, map_location=GPU_NAME))
+
+    linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+    bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+    linear_weights[:, -2] += linear_weights[:, -1]
+    linear_weights = linear_weights[:, :-1]
+    norm_factors = norm_factors[:, :-1]
+
+    mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
+    std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+
+    final_values_, midpoints = full_evaluation(
+                    data, model_path, DEVICE, 
+                    return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
+
+    final_values = final_values[0]
+
+    FAR_2days = -2 # lowest FAR bin we want to worry about
+
+    # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
+    final_values_slx = (final_values - mean_norm)/std_norm
+
+    scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
+    #print("scaled_evals", scaled_evals.shape)
+    scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
+    scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
+        kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+    smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
+        kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+    indices = torch.where(smoothed_scores < FAR_2days)[0]
+    
+    if len(indices) != 0:  # just start the next timeslide, no interesting events
+        indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+        filtered_final_score = smoothed_scores.index_select(0, indices)
+        filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
+
+        indices_ = indices.detach().cpu().numpy()
+
+        # extract important timeslides with indices
+        timeslide_chunks, edge_check_filter = extract_chunks(data, 0, 
+                                            midpoints[indices_],
+                                            DEVICE, window_size=1024) # 0.25 seconds on either side
+                                                                    # so it should come out to desired 0.5
+        filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
+        filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
+        filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
+        filtered_final_score = filtered_final_score[edge_check_filter]
+        timeslide_chunks = timeslide_chunks[edge_check_filter]
+
+        #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
+        if heuristics_tests:
+            combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
+            passed_heuristics = []
+            for i, strain_segment in enumerate(timeslide_chunks):
+                passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
+                                                            short_relation, long_relation))
+                
+            #print("passed heuristics:", passed_heuristics)
+
+            filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
+            filtered_final_score = filtered_final_score[passed_heuristics]
+            filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
+
+            # rename them for less confusion
+            gwak_values = filtered_final_scaled_evals
+            fm_scores = filtered_final_score
+            strain_chunks = filtered_timeslide_chunks
+
+        # do the plotting            
+
+def get_evals_(data, trained_path, savedir, start_point, extra = "", far_search=None):
     supervised_model = False
     if trained_path[:-1].split("/")[-1]=="O3av2_non_linear_bbh_only":
         supervised_model = True
@@ -106,18 +391,16 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         evals.append(ev)
         midpoints.append(mdp+i*(max_gpu_dtps))
 
-    
+
     fm_model_path = (f"{trained_path}/trained/fm_model.pt")
 
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
     if not supervised_model:
-        linear_weights_ = fm_model.layer.weight.detach()
-        bias_value_ = fm_model.layer.bias.detach()
         linear_weights = fm_model.layer.weight.detach().cpu().numpy()
         bias_value = fm_model.layer.bias.detach().cpu().numpy()
-
+        linear_weights[:, -2] += linear_weights[:, -1]
     scores = []
     scaled_evals = []
     for elem in evals:
@@ -138,43 +421,37 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     top_trim = - bottom_trim
     for elem in scores:
         scores_.append(np.convolve(elem, kernel, mode='same')[bottom_trim:top_trim])
-    if not supervised_model:
-        scaled_evals_ = []
-        for elem in scaled_evals:
-            scaled_evals_.append(np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=elem))
-        scaled_evals = scaled_evals_
-        scaled_evals = np.concatenate(scaled_evals, axis=0) #same indexing as scores
-    #for elem in 
+    scaled_evals_ = []
+    for elem in scaled_evals:
+        scaled_evals_.append(np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=elem))
+    scaled_evals = scaled_evals_
+    scaled_evals = np.concatenate(scaled_evals, axis=0) #same indexing as scores
+    
     scores = scores_
     midpoints_ = []
     for elem in midpoints:
         midpoints_.append(elem[bottom_trim:top_trim])
     midpoints = midpoints_
-    #print(scaled_evals[0].shape)
-    
-    #print(scaled_evals.shape)
-    if not supervised_model:
-        scaled_evals_ = np.zeros((scaled_evals.shape[0], scaled_evals.shape[1]-4))
-        counter = 0
-        frequency_correlation = np.zeros(scaled_evals.shape[0])
-        for i in range(scaled_evals.shape[1]):
-            if i % 3 == 2:
-                #frequeny correlation value
-                frequency_correlation += scaled_evals[:, i]
-            else:
-                scaled_evals_[:, counter] = scaled_evals[:, i]
-                counter += 1
 
-        scaled_evals_[:, -1] = frequency_correlation
+    scaled_evals_ = np.zeros((scaled_evals.shape[0], scaled_evals.shape[1]-4))
+    counter = 0
+    frequency_correlation = np.zeros(scaled_evals.shape[0])
+    for i in range(scaled_evals.shape[1]):
+        if i % 3 == 2:
+            #frequeny correlation value
+            frequency_correlation += scaled_evals[:, i]
+        else:
+            scaled_evals_[:, counter] = scaled_evals[:, i]
+            counter += 1
+
+    scaled_evals_[:, -1] = frequency_correlation
 
 
-    if not supervised_model:
-        far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy")
-        # set a bar at 1/2 days FAR to get elements of interest
-    else:
-        far_bins = np.load(f"/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/far_bins_k{kernel_len}.npy")
-
-    far_bar = far_to_metric(3600*24*2, far_bins)
+    far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy")
+    # set a bar at 1/2 days FAR to get elements of interest
+   
+    #far_bar = far_to_metric(3600*24*2, far_bins)
+    far_bar = -2
     #print("1/2 day bar", far_bar)
     all_midpoints = np.hstack(midpoints)
     #passed_scores = []
@@ -210,8 +487,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     for point in midpoint_clusters:
         eval_locations.append(np.where(all_midpoints == point)[0][0])
 
-    
-    
     matplotlib.rcParams.update({'font.size': 22})
 
     gps_times = []
@@ -336,7 +611,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
 def parse_gwtc_catalog(path, mingps=None, maxgps=None):
     gwtc = np.loadtxt(path, delimiter=",", dtype="str")
-    
 
     pulled_data = np.zeros((gwtc.shape[0]-1, 3))
     for i, elem in enumerate(gwtc[1:]): #first row is just data value description
@@ -411,7 +685,7 @@ def IGNORE_main(args):
     # data is [strain_H1, strain_L1], where each is downsampled, whitened, and bandpassed
     get_evals(data, trained_path, savedir, int(A))
 
-def main(args):
+def main():
     gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv", 
                                   1238166018, 1253977218)
 
@@ -419,10 +693,15 @@ def main(args):
     trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
     #trained_path = "/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/"
     savedir = 'output/O3a_runthrough/'
-
+    A = 1243303084
+    B = A + 3600*3//2
     #far_a, far_b = make_metric_vs_far(savedir)
-    
-    if 1:
+    data = whiten_bandpass_resample(A, B, savedir)
+    print(data)
+    assert 0
+    get_evals(data, trained_path, savedir, int(A))
+    assert 0
+    if 0:
         A = 1243303084
         B = A + 3600
         data = whiten_bandpass_resample(A, B, savedir)
@@ -530,12 +809,13 @@ def main(args):
 
 
 if __name__ == '__main__':
+    if 0:
+        parser = argparse.ArgumentParser()
+        
+        # Required arguments
+        parser.add_argument('--valid-segments', type=str, default=None,
+                            help='File with valid segments')
 
-    parser = argparse.ArgumentParser()
-
-    # Required arguments
-    parser.add_argument('--valid-segments', type=str, default=None,
-                        help='File with valid segments')
-
-    args = parser.parse_args()
-    main(args)
+        args = parser.parse_args()
+        main(args)
+    main()
