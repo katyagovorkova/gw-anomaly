@@ -10,7 +10,7 @@ from evaluate_data import full_evaluation
 import json
 import matplotlib
 from torch.nn.functional import conv1d
-
+from scipy.stats import pearsonr
 from config import (
     CHANNEL,
     GPU_NAME,
@@ -19,7 +19,8 @@ from config import (
     BANDPASS_HIGH,
     BANDPASS_LOW,
     FACTORS_NOT_USED_FOR_FM,
-    MODELS_LOCATION
+    MODELS_LOCATION,
+    SEG_NUM_TIMESTEPS
     )
 from helper_functions import far_to_metric, compute_fars, load_gwak_models
 DEVICE = torch.device(GPU_NAME)
@@ -94,9 +95,9 @@ if heuristics_tests: #define the heuristic test helper functions
                 new[:, i-jump] = x[:, i]
             else:
                 jump += 1
-                new[:, -2] += x[:, i]
+                new[:, -1] += x[:, i]
 
-        new[:, -1] = x[:, -1]
+        #new[:, -1] = x[:, -1]
 
         return new
 
@@ -161,454 +162,6 @@ if heuristics_tests: #define the heuristic test helper functions
         long_required_pearson = compute_required_pearson(long[0], long_relation)
         return pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1])
 
-
-def event_clustering(indices, scores, spacing, device):
-    '''
-    Group the evaluations into events, i.e. treat a consecutive sequence
-    of low anomaly score as a single event
-    '''
-
-    clustered = []
-    idxs = indices.detach().cpu().numpy()
-    cluster = []
-    for i, elem in enumerate(idxs):
-        # to move onto next cluster
-        if i != 0:
-            dist = elem - idxs[i-1]
-            if dist > spacing:
-                #make a new cluster
-                clustered.append(cluster)
-                cluster = [] # and initiate a new one
-        cluster.append(elem)
-    clustered.append(cluster) # last one isn't captured, since we haven't moved on
-    final_points = []
-    for cluster in clustered:
-        # take the one with the lowest score (most significant)
-        bestscore = 10
-        bestval = None
-        for elem in cluster:
-            if scores[elem] < bestscore:
-                bestscore = scores[elem]
-                bestval = elem
-        final_points.append(bestval)
-    return torch.from_numpy(np.array(final_points)).int().to(device)
-
-def extract_chunks(strain_data, timeslide_num, important_points, device, roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
-    '''
-    Important points are indicies into thestrain_data
-    '''
-    L_shift = timeslide_num*roll_amount
-    timeslide_len = strain_data.shape[1]
-    edge_check_passed = []
-
-    fill_strains = np.zeros((len(important_points), 2, window_size*2))
-    for idx, point in enumerate(important_points):
-        # check that the point is not on the edge
-        edge_check_passed.append(abs(point - timeslide_len)% timeslide_len > window_size*2)
-        if abs(point - timeslide_len)% timeslide_len > window_size*2:
-            H_selection = strain_data[0, point-window_size:point+window_size]
-
-            # if the livingston points overflow, the modulo should bring them
-            # into the right location. also data is clipped //1000 * 1000
-            # which is divisible by 200, so it should work
-            L_start = (point-window_size+L_shift) % timeslide_len
-            L_end = (point+window_size+L_shift) % timeslide_len
-
-            L_selection = strain_data[1, L_start:L_end]
-
-            fill_strains[idx, 0, :] = H_selection
-            fill_strains[idx, 1, :] = L_selection
-
-    return fill_strains, edge_check_passed
-
-def whiten_bandpass_resample(
-        start_point,
-        end_point,
-        savedir,
-        sample_rate=SAMPLE_RATE,
-        bandpass_low=BANDPASS_LOW,
-        bandpass_high=BANDPASS_HIGH,
-        shift=None):
-
-    device = torch.device(GPU_NAME)
-
-    # Load LIGO data
-    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
-
-    t0 = int(strainL1.t0 / u.s)
-    print(t0)
-
-    if shift != None:
-        shift_datapoints = shift * sample_rate
-        temp = strainL1[-shift_datapoints:]
-        strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
-        strainL1[:shift_datapoints] = temp
-
-    # Whiten, bandpass, and resample
-    strainL1 = strainL1.resample(sample_rate)
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    
-    strainH1 = strainH1.resample(sample_rate)
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-        
-    return [strainH1, strainL1]
-
-def get_evals(data_, model_path, from_saved_models, savedir, start_point):
-    # split the data into 1-hour chunks to fit in memory best
-    print(data_.shape)
-    N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
-    assert 0
-
-    for hour_split in range(N_one_hour_splits):
-        start = int(hour_split*SAMPLE_RATE*3600)
-        end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*3600))
-
-        data = data_[:, start:end]
-        DEVICE = torch.device(f'cuda:{args.gpu}')
-    model_path = model_path if not from_saved_models else \
-        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
-    gwak_models = load_gwak_models(args.model_path, DEVICE, GPU_NAME)
-
-    orig_kernel = 50
-    kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
-    kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
-    kernel = kernel[None, :, :]
-
-    if heuristics_tests:
-        long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
-        short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
-    norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
-
-    fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
-    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
-    fm_model.load_state_dict(torch.load(
-        fm_model_path, map_location=GPU_NAME))
-
-    linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-    bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-    linear_weights[:, -2] += linear_weights[:, -1]
-    linear_weights = linear_weights[:, :-1]
-    norm_factors = norm_factors[:, :-1]
-
-    mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
-    std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
-
-    final_values_, midpoints = full_evaluation(
-                    data, model_path, DEVICE, 
-                    return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
-
-    final_values = final_values[0]
-
-    FAR_2days = -2 # lowest FAR bin we want to worry about
-
-    # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
-    final_values_slx = (final_values - mean_norm)/std_norm
-
-    scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
-    #print("scaled_evals", scaled_evals.shape)
-    scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
-    scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
-        kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
-    smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
-        kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
-    indices = torch.where(smoothed_scores < FAR_2days)[0]
-    
-    if len(indices) != 0:  # just start the next timeslide, no interesting events
-        indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
-        filtered_final_score = smoothed_scores.index_select(0, indices)
-        filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
-
-        indices_ = indices.detach().cpu().numpy()
-
-        # extract important timeslides with indices
-        timeslide_chunks, edge_check_filter = extract_chunks(data, 0, 
-                                            midpoints[indices_],
-                                            DEVICE, window_size=1024) # 0.25 seconds on either side
-                                                                    # so it should come out to desired 0.5
-        filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
-        filtered_final_score = filtered_final_score.detach().cpu().numpy()
-
-        filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
-        filtered_final_score = filtered_final_score[edge_check_filter]
-        timeslide_chunks = timeslide_chunks[edge_check_filter]
-
-        #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
-        if heuristics_tests:
-            combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
-            passed_heuristics = []
-            for i, strain_segment in enumerate(timeslide_chunks):
-                passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
-                                                            short_relation, long_relation))
-                
-            #print("passed heuristics:", passed_heuristics)
-
-            filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
-            filtered_final_score = filtered_final_score[passed_heuristics]
-            filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
-
-            # rename them for less confusion
-            gwak_values = filtered_final_scaled_evals
-            fm_scores = filtered_final_score
-            strain_chunks = filtered_timeslide_chunks
-
-        # do the plotting            
-
-def get_evals_(data, trained_path, savedir, start_point, extra = "", far_search=None):
-    supervised_model = False
-    if trained_path[:-1].split("/")[-1]=="O3av2_non_linear_bbh_only":
-        supervised_model = True
-    strain = np.stack(data, axis=1)[np.newaxis, :, :]
-    strain_orig = np.stack(data, axis=1)
-    strain = np.swapaxes(strain, 1, 2) # make it (N_batches, 2, time_axis), N_batches is 1 here
-
-    #break the strain into pieces along the time axis to fit into GPU memory
-    max_gpu_seconds = 350 # 500 seconds at a time
-    max_gpu_dtps = max_gpu_seconds * SAMPLE_RATE
-
-    n_splits = (strain.shape[2] // max_gpu_dtps) + 1 
-    split_data = []
-    for n in range(n_splits):
-        split_data.append(strain[:, :, n*max_gpu_dtps:(n+1)*max_gpu_dtps])
-
-
-    model_path = f"{trained_path}/trained/models/"
-    model_paths = []
-    for elem in ["background.pt", "bbh.pt",  "glitches.pt", 
-                 "sghf.pt", "sglf.pt"]:
-        model_paths.append(f'{model_path}/{elem}')
-
-    #if not supervised_model:
-    norm_factors = np.load(f"{trained_path}/trained/norm_factor_params.npy")
-
-    device=DEVICE
-    evals = []
-    midpoints = []
-    for i, strain_elem in enumerate(split_data):
-        ev, mdp = full_evaluation(strain_elem, model_paths, device, return_midpoints=True)
-        ev = ev.cpu().detach().numpy()
-        ev = np.delete(ev, FACTORS_NOT_USED_FOR_FM, -1)
-        evals.append(ev)
-        midpoints.append(mdp+i*(max_gpu_dtps))
-
-
-    fm_model_path = (f"{trained_path}/trained/fm_model.pt")
-
-    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
-    fm_model.load_state_dict(torch.load(
-        fm_model_path, map_location=GPU_NAME))#map_location=f'cuda:{args.gpu}'))
-    if not supervised_model:
-        linear_weights = fm_model.layer.weight.detach().cpu().numpy()
-        bias_value = fm_model.layer.bias.detach().cpu().numpy()
-        linear_weights[:, -2] += linear_weights[:, -1]
-    scores = []
-    scaled_evals = []
-    for elem in evals:
-        elem = (elem - norm_factors[0]) / norm_factors[1]
-        if not supervised_model:
-            scaled_eval = np.multiply(elem, linear_weights)
-            scaled_evals.append(scaled_eval[0, :, :])
-        elem = torch.from_numpy(elem).to(DEVICE)
-        scores.append(fm_model(elem).detach().cpu().numpy()[0, :, 0])
-
-
-    # do smoothing on the scores
-    kernel_len = int(50*5/SEGMENT_OVERLAP)
-    kernel = np.ones(kernel_len)/kernel_len
-    #kernel_evals = np.ones((kernel_len, scaled_evals[0].shape[1]))/kernel_len
-    scores_ = []
-    bottom_trim = kernel_len * 5
-    top_trim = - bottom_trim
-    for elem in scores:
-        scores_.append(np.convolve(elem, kernel, mode='same')[bottom_trim:top_trim])
-    scaled_evals_ = []
-    for elem in scaled_evals:
-        scaled_evals_.append(np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=elem))
-    scaled_evals = scaled_evals_
-    scaled_evals = np.concatenate(scaled_evals, axis=0) #same indexing as scores
-    
-    scores = scores_
-    midpoints_ = []
-    for elem in midpoints:
-        midpoints_.append(elem[bottom_trim:top_trim])
-    midpoints = midpoints_
-
-    scaled_evals_ = np.zeros((scaled_evals.shape[0], scaled_evals.shape[1]-4))
-    counter = 0
-    frequency_correlation = np.zeros(scaled_evals.shape[0])
-    for i in range(scaled_evals.shape[1]):
-        if i % 3 == 2:
-            #frequeny correlation value
-            frequency_correlation += scaled_evals[:, i]
-        else:
-            scaled_evals_[:, counter] = scaled_evals[:, i]
-            counter += 1
-
-    scaled_evals_[:, -1] = frequency_correlation
-
-
-    far_bins = np.load(f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy")
-    # set a bar at 1/2 days FAR to get elements of interest
-   
-    #far_bar = far_to_metric(3600*24*2, far_bins)
-    far_bar = -2
-    #print("1/2 day bar", far_bar)
-    all_midpoints = np.hstack(midpoints)
-    #passed_scores = []
-    passed_midpoints = []
-    for i in range(len(scores)):
-        sc = scores[i]
-        mdps = midpoints[i]
-        filter = sc<far_bar 
-        chosen_mdps = mdps[filter]
-        passed_midpoints.append(chosen_mdps)
-
-    #condense back into one array
-    scores = np.hstack(scores)
-    midpoints = np.hstack(passed_midpoints)
-    try:
-        os.makedirs(f'{savedir}/{start_point}/')
-    except FileExistsError:
-        None
-
-    plt.plot(all_midpoints[200:-200], scores[200:-200])
-    plt.xlabel("Datapoints")
-    plt.ylabel("Final metric score")
-    plt.savefig(f'{savedir}/{start_point}/eval_timeseries.png', dpi=300)
-    plt.close()
-
-    if len(midpoints) == 0:
-        print("Found nothing!")
-        return None
-
-    midpoint_clusters = clustering(midpoints)
-    eval_locations = []
-    #print(midpoints)
-    for point in midpoint_clusters:
-        eval_locations.append(np.where(all_midpoints == point)[0][0])
-
-    matplotlib.rcParams.update({'font.size': 22})
-
-    gps_times = []
-    best_scores = []
-    for j in range(len(midpoint_clusters)):
-        loudest = eval_locations[j]
-        #print("loudest", loudest)
-
-        left_edge = int(150 * 5 / SEGMENT_OVERLAP) 
-        right_edge = int(225 * 5 / SEGMENT_OVERLAP)
-        n_points = left_edge+right_edge
-        labels = ['background', 'bbh', 'glitch', 'sglf', 'sghf', 'pearson']
-        quak_evals_ts = np.linspace(0, n_points*(SEGMENT_OVERLAP/SAMPLE_RATE), n_points)
-        #if len(evals[loudest-left_edge:loudest+right_edge, i]) != len(quak_evals_ts):
-        #    continue #bypassing edge effects
-
-        
-
-        #get rid of edge effects
-        if loudest < 200 or loudest > len(scores) - 201:
-            continue
-        try:
-            best_score = min(scores[loudest-left_edge:loudest+right_edge])
-        except ValueError:
-            continue
-
-        fig, axs = plt.subplots(2, 2, figsize=(28, 17))
-
-        if not supervised_model:
-            # reduce scaled evals of frequency domain correlation
-            labels = ['background','background', 'bbh','bbh', 'glitch', 'glitch', 'sglf', 'sglf', 'sghf', 'sghf', 'pearson', 'freq corr']
-            cols = ['purple', 'blue', 'green', 'salmon', 'goldenrod', 'brown' ]
-            for i in range(scaled_evals_.shape[1]):
-                #print(scaled_evals_.shape)
-                #print(loudest-left_edge, loudest+right_edge, i)
-                line_type = "-"
-                if i% 2 == 1:
-                    line_type = "--"
-                if i % 2 == 0 or labels[i] in ["pearson", "freq corr"]:
-                    axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i], 
-                                label = labels[i], c=cols[i//2], linestyle=line_type)
-                else:
-                    axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i], 
-                                 c=cols[i//2], linestyle=line_type)
-        best_scores.append(best_score)
-        axs[1, 0].plot(quak_evals_ts*1000, scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
-        axs[1, 0].plot([], [], '-', label="Hanford", c="black")
-        axs[1, 0].plot([], [], '--', label="Livingston", c="black")
-        axs[1, 0].legend(handlelength=3, fontsize=17)
-        axs[1, 0].set_xlabel("Time, (ms)")
-        axs[1, 0].set_ylabel("Final Metric Contribution")
-        
-        #axs[0].legend()
-        #axs[0].set_xlabel('Time, (ms)')
-        #axs[0].set_ylabel('Contribution to final metric')
-
-        p = all_midpoints[loudest]
-        left_edge, right_edge = left_edge * SEGMENT_OVERLAP, right_edge*SEGMENT_OVERLAP
-        strain_ts = np.linspace(0, (right_edge+left_edge)/SAMPLE_RATE, right_edge+left_edge)
-        #print("190", strain_orig.shape, p-left_edge,p+right_edge)
-        axs[0, 0].plot(strain_ts*1000,strain_orig[p-left_edge:p+right_edge, 0], label = 'Hanford', alpha=0.8)
-        axs[0, 0].plot(strain_ts*1000, strain_orig[p-left_edge:p+right_edge, 1], label = 'Livingston', alpha=0.8)
-        axs[0, 0].set_xlabel('Time, (ms)')
-        axs[0, 0].set_ylabel('strain')
-        axs[0, 0].legend()
-        axs[0, 0].set_title(f'gps time: {p/SAMPLE_RATE:.3f} + {start_point}')
-        gps_times.append(p/SAMPLE_RATE + start_point)
-
-        # plot the Q-scans
-        q_edge = int(7.5*4096)
-        H_strain = data[0][p-left_edge-q_edge:p+right_edge+q_edge]
-        L_strain = data[1][p-left_edge-q_edge:p+right_edge+q_edge]
-        t0 = H_strain.t0.value
-        dt = H_strain.dt.value
-        #print(p-left_edge-q_edge,p+right_edge+q_edge)
-        #print(p, left_edge, q_edge, t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt)
-        H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
-        L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
-        f = np.array(H_hq.yindex)
-        t = np.array(H_hq.xindex)
-        #t=strain_ts *1000
-        t -= t[0]
-
-        im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T)
-        fig.colorbar(im_H, ax=axs[0, 1], label = "spectral power")
-        axs[0, 1].set_yscale("log")
-        axs[0, 1].set_xlabel("Time (ms)")
-        axs[0, 1].set_ylabel("Freq (Hz)")
-        axs[0, 1].set_title("Hanford Q-Transform")
-
-        im_L = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
-        fig.colorbar(im_L, ax=axs[1, 1], label = "spectral power")
-        axs[1, 1].set_yscale("log")
-        axs[1, 1].set_xlabel("Time (ms)")
-        axs[1, 1].set_ylabel("Freq (Hz)")
-        axs[1, 1].set_title("Livingston Q-Transform")
-        
-        
-        #print(np.array(H_hq))
-        #print(np.array(H_hq).shape)
-        #print(H_hq.shape)
-        #axs[0, 1].imshow()
-        #assert 0
-        best_far=""
-        if far_search != None:
-            far_a, far_b = far_search
-            far_a, far_b = np.array(far_a), np.array(far_b)
-            #print(far_b, best_score)
-            filter = ([elem != None for elem in far_b])
-            far_a = far_a[filter][::-1]
-            far_b = far_b[filter][::-1]
-            loc = np.searchsorted(far_b, best_score)
-            best_far = far_a[loc]
-        # = compute_fars(np.array([best_score]), far_bins)[0]
-        #plt.tight_layout()
-        plt.savefig(f'{savedir}/{start_point}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}{extra}.png', dpi=300, bbox_inches="tight")
-        plt.close()
-
-    # save data file with detections in the folder
-    np.save(f'{savedir}/{start_point}/gps_times.npy', np.array(gps_times))
-    np.save(f'{savedir}/{start_point}/best_scores.npy', np.array(best_scores))
-
 def parse_gwtc_catalog(path, mingps=None, maxgps=None):
     gwtc = np.loadtxt(path, delimiter=",", dtype="str")
 
@@ -671,19 +224,291 @@ def make_eval_chunks(a, b, dur):
     out.append([str(b-dur), str(b)])
     return out
 
-def IGNORE_main(args):
-    trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
+def event_clustering(indices, scores, spacing, device):
+    '''
+    Group the evaluations into events, i.e. treat a consecutive sequence
+    of low anomaly score as a single event
+    '''
 
-    savedir = 'output/NAME/'
-    savedir = None
-    A, B = None, None # start and stop of gps time
+    clustered = []
+    idxs = indices.detach().cpu().numpy()
+    cluster = []
+    for i, elem in enumerate(idxs):
+        # to move onto next cluster
+        if i != 0:
+            dist = elem - idxs[i-1]
+            if dist > spacing:
+                #make a new cluster
+                clustered.append(cluster)
+                cluster = [] # and initiate a new one
+        cluster.append(elem)
+    clustered.append(cluster) # last one isn't captured, since we haven't moved on
+    final_points = []
+    for cluster in clustered:
+        # take the one with the lowest score (most significant)
+        bestscore = 10
+        bestval = None
+        for elem in cluster:
+            if scores[elem] < bestscore:
+                bestscore = scores[elem]
+                bestval = elem
+        final_points.append(bestval)
+    return torch.from_numpy(np.array(final_points)).int().to(device)
 
-    #fill it in (or alternative data loading)
-    assert A is not None and B is not None and savedir is not None
+def extract_chunks(strain_data, timeslide_num, important_points, device, 
+                    roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
+    '''
+    Important points are indicies into thestrain_data
+    '''
+    L_shift = timeslide_num*roll_amount
+    timeslide_len = strain_data.shape[1]
+    edge_check_passed = []
+    fill_strains = np.zeros((len(important_points), 2, window_size*2))
+    for idx, point in enumerate(important_points):
+        # check that the point is not on the edge
+        edge_check_passed.append(not(point < window_size * 2 or timeslide_len - point < window_size*2))
+        if not(point < window_size * 2 or timeslide_len - point < window_size*2):
+            H_selection = strain_data[0, point-window_size:point+window_size]
 
-    data = whiten_bandpass_resample(A, B, savedir, shift=None)
-    # data is [strain_H1, strain_L1], where each is downsampled, whitened, and bandpassed
-    get_evals(data, trained_path, savedir, int(A))
+            # if the livingston points overflow, the modulo should bring them
+            # into the right location. also data is clipped //1000 * 1000
+            # which is divisible by 200, so it should work
+            L_start = (point-window_size+L_shift) % timeslide_len
+            L_end = (point+window_size+L_shift) % timeslide_len
+
+            L_selection = strain_data[1, L_start:L_end]
+
+            fill_strains[idx, 0, :] = H_selection
+            fill_strains[idx, 1, :] = L_selection
+
+    return fill_strains, edge_check_passed
+
+def whiten_bandpass_resample(
+        start_point,
+        end_point,
+        savedir,
+        sample_rate=SAMPLE_RATE,
+        bandpass_low=BANDPASS_LOW,
+        bandpass_high=BANDPASS_HIGH,
+        shift=None):
+
+    device = torch.device(GPU_NAME)
+
+    # Load LIGO data
+    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
+    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
+
+    t0 = int(strainL1.t0 / u.s)
+    print(t0)
+
+    if shift != None:
+        shift_datapoints = shift * sample_rate
+        temp = strainL1[-shift_datapoints:]
+        strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
+        strainL1[:shift_datapoints] = temp
+
+    # Whiten, bandpass, and resample
+    strainL1 = strainL1.resample(sample_rate)
+    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
+    
+    strainH1 = strainH1.resample(sample_rate)
+    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
+        
+    return [strainH1, strainL1]
+
+def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
+    # split the data into 1-hour chunks to fit in memory best
+    print(data_.shape)
+    N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
+
+    for hour_split in range(N_one_hour_splits):
+        start = int(hour_split*SAMPLE_RATE*3600)
+        end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*3600))
+
+        data = data_[:, start:end]
+        
+        #DEVICE = torch.device(f'cuda:{args.gpu}')
+        model_path = ["output/O3av2/trained/models/bbh.pt", 
+                    "output/O3av2/trained/models/sglf.pt", 
+                    "output/O3av2/trained/models/sghf.pt", 
+                    "output/O3av2/trained/models/background.pt",
+                        "output/O3av2/trained/models/glitches.pt"]
+        models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
+        gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
+        orig_kernel = 50
+        kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
+        kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
+        kernel = kernel[None, :, :]
+        heuristics_tests = True
+        if heuristics_tests:
+            long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+            short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
+        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+
+        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+        fm_model.load_state_dict(torch.load(
+            fm_model_path, map_location=GPU_NAME))
+
+        linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+        bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+        linear_weights[:, -2] += linear_weights[:, -1]
+        linear_weights = linear_weights[:, :-1]
+        norm_factors = norm_factors[:, :-1]
+
+        mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
+        std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+
+        final_values, midpoints = full_evaluation(
+                        data[None, :, :], models_path, DEVICE, 
+                        return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
+        
+        final_values = final_values[0]
+        FAR_2days = -2 # lowest FAR bin we want to worry about
+
+        # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
+        final_values_slx = (final_values - mean_norm)/std_norm
+        scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
+        #print("scaled_evals", scaled_evals.shape)
+        scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
+        scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
+            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
+            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        indices = torch.where(smoothed_scores < FAR_2days)[0]
+        
+        if len(indices) == 0: return None  
+        
+
+        indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+        filtered_final_score = smoothed_scores.index_select(0, indices)
+        filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
+
+        
+
+        indices = indices.detach().cpu().numpy()
+        # extract important "events" with indices
+        timeslide_chunks, edge_check_filter = extract_chunks(data, 0, 
+                                            midpoints[indices],
+                                            DEVICE, window_size=1024) # 0.25 seconds on either side
+                                                                    # so it should come out to desired 0.5
+        filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
+        filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
+        filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
+        filtered_final_score = filtered_final_score[edge_check_filter]
+        timeslide_chunks = timeslide_chunks[edge_check_filter]
+        indices = indices[edge_check_filter]
+
+        #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
+        filtered_timeslide_chunks = timeslide_chunks
+        if heuristics_tests:
+            N_initial = len(filtered_final_score)
+            combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
+            passed_heuristics = []
+            for i, strain_segment in enumerate(timeslide_chunks):
+                passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
+                                                            short_relation, long_relation))
+                
+            #print("passed heuristics:", passed_heuristics)
+
+            filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
+            filtered_final_score = filtered_final_score[passed_heuristics]
+            filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
+            indices = indices[passed_heuristics]
+
+            print(f"Fraction removed by heuristics test {N_initial -len(filtered_final_score)}/{N_initial}")
+        # rename them for less confusion, easier typing
+        gwak_values = filtered_final_scaled_evals
+        fm_scores = filtered_final_score
+        strain_chunks = filtered_timeslide_chunks
+
+        if strain_chunks.shape[0] == 0: return None
+        # plotting all these significant events
+        n_points = strain_chunks.shape[2]
+
+        quak_evals_ts = np.linspace(0, 2*(1024//SAMPLE_RATE)*SEGMENT_OVERLAP/SAMPLE_RATE , 2*1024//SAMPLE_RATE)
+        scaled_evals = scaled_evals.cpu().numpy()
+        scaled_evals = combine_freqcorr(scaled_evals)
+        bias_value = bias_value.cpu().numpy()
+        smoothed_scores = smoothed_scores.cpu().numpy()
+        for j in range(len(gwak_values)):
+            fig, axs = plt.subplots(2, 2, figsize=(28, 17))
+            loudest = indices[j]
+            left_edge = 1024 //SEGMENT_OVERLAP
+            right_edge = 1024 // SEGMENT_OVERLAP
+            labels = ['background','background', 'bbh','bbh', 'glitch', 'glitch', 'sglf', 'sglf', 'sghf', 'sghf', 'freq corr']
+            cols = ['purple', 'blue', 'green', 'salmon', 'goldenrod', 'brown' ]
+            for i in range(scaled_evals.shape[1]):
+                #print(scaled_evals_.shape)
+                #print(loudest-left_edge, loudest+right_edge, i)
+                line_type = "-"
+                if i% 2 == 1:
+                    line_type = "--"    
+                if i % 2 == 0 or labels[i] in ["freq corr"]:
+
+                    axs[1, 0].plot(scaled_evals[loudest-left_edge:loudest+right_edge, i], 
+                                label = labels[i], c=cols[i//2], linestyle=line_type)
+                else:
+                    axs[1, 0].plot(scaled_evals[loudest-left_edge:loudest+right_edge, i], 
+                                    c=cols[i//2], linestyle=line_type)
+
+            
+            axs[1, 0].plot( smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
+            axs[1, 0].plot([], [], '-', label="Hanford", c="black")
+            axs[1, 0].plot([], [], '--', label="Livingston", c="black")
+            axs[1, 0].legend(handlelength=3, fontsize=17)
+            axs[1, 0].set_xlabel("Time, (ms)")
+            axs[1, 0].set_ylabel("Final Metric Contribution")
+
+            strain_ts = np.linspace(0, (right_edge+left_edge)/SAMPLE_RATE, right_edge+left_edge)
+            #print("190", strain_orig.shape, p-left_edge,p+right_edge)
+            axs[0, 0].plot(strain_chunks[j, 0, :], label = 'Hanford', alpha=0.8)
+            axs[0, 0].plot(strain_chunks[j, 1, :], label = 'Livingston', alpha=0.8)
+            axs[0, 0].set_xlabel('Time, (ms)')
+            axs[0, 0].set_ylabel('strain')
+            axs[0, 0].legend()
+            axs[0, 0].set_title(f'gps time: {start_point} + {midpoints[loudest]/SAMPLE_RATE + hour_split*3600:.3f}')
+            #gps_times.append(p/SAMPLE_RATE + start_point)
+            p = midpoints[loudest]
+            if 0:
+                # plot the Q-scans
+                
+                q_edge = int(7.5*4096)
+                H_strain = gwpy_timeseries[0][p-left_edge-q_edge:p+right_edge+q_edge + 3600*hour_split*SAMPLE_RATE]
+                L_strain = gwpy_timeseries[1][p-left_edge-q_edge:p+right_edge+q_edge + 3600*hour_split*SAMPLE_RATE]
+                t0 = H_strain.t0.value
+                dt = H_strain.dt.value
+                #print(p-left_edge-q_edge,p+right_edge+q_edge)
+                #print(p, left_edge, q_edge, t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt)
+                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
+                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
+                f = np.array(H_hq.yindex)
+                t = np.array(H_hq.xindex)
+                #t=strain_ts *1000
+                t -= t[0]
+                
+                im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T)
+                fig.colorbar(im_H, ax=axs[0, 1], label = "spectral power")
+                axs[0, 1].set_yscale("log")
+                axs[0, 1].set_xlabel("Time (ms)")
+                axs[0, 1].set_ylabel("Freq (Hz)")
+                axs[0, 1].set_title("Hanford Q-Transform")
+
+                im_L = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
+                fig.colorbar(im_L, ax=axs[1, 1], label = "spectral power")
+                axs[1, 1].set_yscale("log")
+                axs[1, 1].set_xlabel("Time (ms)")
+                axs[1, 1].set_ylabel("Freq (Hz)")
+                axs[1, 1].set_title("Livingston Q-Transform")
+                
+                #{savedir}/{start_point}/
+            best_far = "NOFAR"
+            best_score = fm_scores[j][0]
+            print("best_score", best_score)
+            extra = "NOEXTRA"
+            plt.savefig(f'./{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}{extra}.png', dpi=300, bbox_inches="tight")
+            plt.close()
 
 def main():
     gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv", 
@@ -695,12 +520,19 @@ def main():
     savedir = 'output/O3a_runthrough/'
     A = 1243303084
     B = A + 3600*3//2
-    #far_a, far_b = make_metric_vs_far(savedir)
-    data = whiten_bandpass_resample(A, B, savedir)
-    print(data)
+    #if 0:
+    #H, L = whiten_bandpass_resample(A, B, savedir)
+    #data = np.vstack([np.array(H.data), np.array(L.data)])
+
+    #np.save("temporary_save.npy", data)
+    data = np.load("temporary_save.npy")
+    H, L = None, None
+    #def get_evals(data_, model_path, from_saved_models, savedir, start_point):
+    get_evals(data, trained_path, savedir, int(A), [H, L])
     assert 0
-    get_evals(data, trained_path, savedir, int(A))
-    assert 0
+
+
+
     if 0:
         A = 1243303084
         B = A + 3600

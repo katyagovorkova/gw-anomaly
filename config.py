@@ -4,10 +4,10 @@ VERSION = PERIOD + 'v2' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
 STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
 DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
-MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models'
+MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/'
 
 # GPU
-GPU_NAME = 'cuda:0'
+GPU_NAME = 'cuda:3'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096

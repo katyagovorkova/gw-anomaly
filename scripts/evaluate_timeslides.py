@@ -93,9 +93,9 @@ if heuristics_tests: #define the heuristic test helper functions
                 new[:, i-jump] = x[:, i]
             else:
                 jump += 1
-                new[:, -2] += x[:, i]
+                new[:, -1] += x[:, i]
 
-        new[:, -1] = x[:, -1]
+        #new[:, -1] = x[:, -1]
 
         return new
 
