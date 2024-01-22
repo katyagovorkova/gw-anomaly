@@ -7,7 +7,7 @@ DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
 MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/'
 
 # GPU
-GPU_NAME = 'cuda:3'
+GPU_NAME = 'cuda:2'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
@@ -128,13 +128,6 @@ FM_TIMESLIDE_TOTAL_DURATION = 0.1 * 30 * 24 * 3600
 TIMESLIDES_START = 1243382418 # Ryan = 1248652818; Eric = 1243382418; Katya = 1238166018
 TIMESLIDES_STOP =  1248652818 # Ryan = 1253977218; Eric = 1248652818; Katya = 1243382418
 
-
-# evolutionary search
-INIT_SIGMA = 0.5
-POPULATION_SIZE = 100
-N_ELITE = 10
-NOISE = 0.01
-
 # linear SVM
 SVM_LR = 0.01
 N_SVM_EPOCHS = 5000
@@ -184,3 +177,4 @@ SUPERVISED_FAR_TIMESLIDE_LEN = 24*3600
 SUPERVISED_SMOOTHING_KERNEL = 50
 
 PEARSON_FLAG = False
+DATA_EVAL_USE_HEURISTIC = True
