@@ -228,7 +228,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         final_values = final_values[0]
 
         # Set the threshold here    
-        FAR_2days = 0.5 # lowest FAR bin we want to worry about
+        FAR_2days = 1.5 # lowest FAR bin we want to worry about
 
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
