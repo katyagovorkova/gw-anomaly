@@ -2,13 +2,15 @@ import os
 import argparse
 import numpy as np
 import torch
-
+from models import LinearModel
 from gwak_predict import quak_eval
 from helper_functions import (
     std_normalizer_torch,
     split_into_segments_torch,
     stack_dict_into_tensor,
-    pearson_computation
+    pearson_computation,
+    joint_heuristic_test,
+    combine_freqcorr
 )
 import sys
 sys.path.append(
@@ -22,7 +24,10 @@ from config import (
     RETURN_INDIV_LOSSES,
     SCALE,
     MODELS_LOCATION,
-    PEARSON_FLAG
+    PEARSON_FLAG,
+    DATA_EVAL_USE_HEURISTIC,
+    FACTORS_NOT_USED_FOR_FM,
+
 )
 
 
@@ -132,11 +137,61 @@ def main(args):
     if n_splits * DATA_EVAL_MAX_BATCH != n_batches_total:
         n_splits += 1
     for i in range(n_splits):
-        result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = full_evaluation(
-            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE)[0].cpu().numpy()
-
+        output, midpoints = full_evaluation(
+            data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE)#[0].cpu().numpy()
+        result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = output.cpu().numpy()
     np.save(args.save_path, result)
+    if DATA_EVAL_USE_HEURISTIC:
+        # need to get the point of highest score
+        
+        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
+        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+        fm_model.load_state_dict(torch.load(
+            fm_model_path, map_location=GPU_NAME))
+
+        linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+        linear_weights[:, -2] += linear_weights[:, -1]
+        linear_weights = linear_weights[:, :-1]
+        norm_factors = norm_factors[:, :-1]
+
+        result = torch.from_numpy((result-norm_factors[0])/norm_factors[1]).float().to(DEVICE)
+        scaled_evals = torch.multiply(result, linear_weights[None, :])#[0, :]
+        scores = (scaled_evals.sum(axis=2))#[:, None]
+        scores = scores.detach().cpu().numpy()
+        strongest = np.argmin(scores, axis=1)
+        scaled_evals = scaled_evals.detach().cpu().numpy()
+        long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+        short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
+        passed = []
+        for i in range(len(data)):
+            #strain_center = midpoints[strongest[i]]
+            #print(midpoints[strongest[i]], strongest[i])
+            strain_center = 7300
+            eval_strongest_loc = 144
+            if args.save_path[:-4].split("/")[-1] == "wnbhf_varying_snr_evals":
+                strain_center = 9300 
+                eval_strongest_loc = 184
+            elif args.save_path[:-4].split("/")[-1] == "wnblf_varying_snr_evals":
+                strain_center = 9400 
+                eval_strongest_loc = 186
+            elif args.save_path[:-4].split("/")[-1] == "supernova_varying_snr_evals":
+                strain_center = 10850
+                eval_strongest_loc = 218
+            #print("171", np.where(strongest==7300))
+            #print(data[i, :, strain_center-1024:strain_center+1024].shape, combine_freqcorr(scaled_evals[i]).shape)
+            #print("strain center", strain_center)
+            passed.append(joint_heuristic_test(
+                                data[i, :, strain_center-1024:strain_center+1024],
+                                 combine_freqcorr(scaled_evals[i])[eval_strongest_loc],
+                                 short_relation,
+                                 long_relation))
+            print(f"Computing heuristic test {i}/{len(data)}" , end = '\r')
+        passed = np.array(passed)
+        print("177", passed.sum())
+
+        np.save(f"{args.save_path[:-4]}_heuristic_res.npy", passed)
 
 if __name__ == '__main__':
 
