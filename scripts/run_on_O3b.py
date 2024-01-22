@@ -390,7 +390,7 @@ def main(args):
         assert 0
 
     for A, B in valid_segments:
-        if b - a >= 1800:
+        if B - A >= 1800:
             print("Working on", A, B)
             H, L = whiten_bandpass_resample(A, B)
             data = np.vstack([np.array(H.data), np.array(L.data)])
