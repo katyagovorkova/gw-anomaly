@@ -99,7 +99,7 @@ def main(args):
         long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
         short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
 
-    gwak_models_ = load_gwak_models(args.model_path, DEVICE, device_str)
+    gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
     norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
     # norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
     #     8.2891174e+02, 2.1687556e+03, 1.6633119e+02, 2.3331506e+02,
@@ -165,7 +165,7 @@ def main(args):
         segments_normalized = std_normalizer_torch(segments)
 
         RNN_precomputed_all = full_evaluation(
-                    segments_normalized, args.model_path, DEVICE, 
+                    segments_normalized, model_path, DEVICE,
                     return_midpoints=True, loaded_models=None, grad_flag=False,
                     do_rnn_precomp=True, already_split=True)
         # extract the batch size
@@ -175,7 +175,7 @@ def main(args):
         batch_size_ = RNN_precomputed_all['bbh'][1]
 
         timeslide = segments_normalized
-        gwak_models = load_gwak_models(args.model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
+        gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
         for timeslide_num in range(1, n_timeslides + 1):
             computed_hist = None
@@ -196,7 +196,7 @@ def main(args):
                 RNN_precomputed[key][:, 128:] = torch.roll(RNN_precomputed[key][:, 128:], roll_amount, dims=0)
             #print("in evaluate timeslides, RNN computed value", RNN_precomputed['bbh'][0, 120:136])
             final_values, midpoints = full_evaluation(
-                    timeslide, args.model_path, DEVICE, 
+                    timeslide, model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
                     precomputed_rnn=RNN_precomputed, batch_size=batch_size_, already_split=True)
 
@@ -204,7 +204,7 @@ def main(args):
             sanity_check = False
             if sanity_check:
                 final_values_, _ = full_evaluation(
-                    segments_normalized, args.model_path, DEVICE, 
+                    segments_normalized, model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
                 print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
 
