@@ -20,7 +20,8 @@ from config import (
     SMOOTHING_KERNEL_SIZES,
     DO_SMOOTHING,
     GPU_NAME,
-    MODELS_LOCATION
+    MODELS_LOCATION,
+    FM_LOCATION
 )
 
 
@@ -32,13 +33,13 @@ def main(args):
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
     fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
-        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+        os.path.join(FM_LOCATION, os.path.basename(args.fm_model_path))
 
     metric_coefs_path = args.metric_coefs_path if not args.from_saved_fm_model else \
-        os.path.join(MODELS_LOCATION, os.path.basename(args.metric_coefs_path))
+        os.path.join(FM_LOCATION, os.path.basename(args.metric_coefs_path))
 
     norm_factor_path = args.norm_factor_path if not args.from_saved_fm_model else \
-        os.path.join(MODELS_LOCATION, os.path.basename(args.norm_factor_path))
+        os.path.join(FM_LOCATION, os.path.basename(args.norm_factor_path))
 
     if metric_coefs_path is not None:
         # initialize histogram
@@ -46,7 +47,7 @@ def main(args):
 
         if DO_SMOOTHING:
             for kernel_len in SMOOTHING_KERNEL_SIZES:
-                mod_path = f'{args.save_path[:-4]}_k{kernel_len}.npy'
+                mod_path = f'{args.save_path[:-4]}_{kernel_len}.npy'
                 hist = np.zeros(n_bins)
                 np.save(mod_path, hist)
 
@@ -117,7 +118,7 @@ def main(args):
 
                     update,_ = np.histogram(vals_convolved, bins=n_bins, range=[-HISTOGRAM_BIN_MIN, HISTOGRAM_BIN_MIN])
 
-                    mod_path = f"{args.save_path[:-4]}_k{kernel_len}.npy"
+                    mod_path = f"{args.save_path[:-4]}_{kernel_len}.npy"
                     past_hist = np.load(mod_path)
                     new_hist = past_hist + update
                     np.save(mod_path, new_hist)

@@ -36,11 +36,11 @@ rule generate_timeslides_for_far:
     params:
         model_path = expand(rules.train_gwak.params.model_file,
             dataclass=modelclasses,
-            version=VERSION),
+            version='O3av2'),
         from_saved_models = True,
-        data_path = f'/home/katya.govorkova/gw-anomaly/output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+        data_path = f'/home/katya.govorkova/gw-anomaly/output/O3av2/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
     output:
-        save_evals_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/',
+        save_evals_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/'),
         log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
         'mkdir -p {output.save_evals_path}; '
@@ -57,7 +57,7 @@ rule all_timeslides_for_far:
         expand(rules.generate_timeslides_for_far.output,
             id=range(4),
             files_to_eval=-1,
-            timeslide_total_duration=32875) # 3.156e+8/800/4/3
+            timeslide_total_duration=10044) # 3.156e+8/800/4/3
 
 rule evaluate_signals:
     params:
@@ -150,6 +150,12 @@ rule recreation_and_quak_plots:
             {input.fm_model_path} {params.from_saved_fm_model} {params.savedir}'
 
 rule compute_far:
+    input:
+        data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
+            id='{far_id}',
+            version='O3av2',
+            timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
+            files_to_eval=-1),
     params:
         metric_coefs_path = rules.train_final_metric.params.params_file,
         norm_factors_path = rules.train_final_metric.params.norm_factor_file,
@@ -159,17 +165,13 @@ rule compute_far:
             version=VERSION),
         from_saved_models = True,
         from_saved_fm_model = True,
-        data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
-            id='{far_id}',
-            version='O3av2',
-            timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
-            files_to_eval=-1),
         shorten_timeslides = False,
     output:
         save_path = 'output/{version}/far_bins_{far_id}.npy'
     shell:
+        'touch {output.save_path};'
         'python3 scripts/compute_far.py {output.save_path} {params.model_path} {params.from_saved_models} \
-            --data-path {params.data_path} \
+            --data-path {input.data_path} \
             --fm-model-path {params.fm_model_path} \
             --from-saved-fm-model {params.from_saved_fm_model} \
             --metric-coefs-path {params.metric_coefs_path} \

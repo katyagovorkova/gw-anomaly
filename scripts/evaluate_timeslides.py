@@ -143,7 +143,8 @@ def main(args):
         reduced_len = (data.shape[1] // 1000) * 1000
         data = data[:, :reduced_len]
 
-        data = torch.from_numpy(data).to(DEVICE)
+        if not torch.is_tensor(data):
+            data = torch.from_numpy(data).to(DEVICE)
         data[1, :] = torch.roll(data[1, :], initial_roll)
         strain_data = np.copy(data.cpu().numpy())
         sample_length = data.shape[1] / SAMPLE_RATE

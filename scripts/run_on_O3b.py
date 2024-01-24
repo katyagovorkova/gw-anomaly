@@ -159,8 +159,14 @@ def whiten_bandpass_resample(
     device = torch.device(GPU_NAME)
 
     # Load LIGO data
-    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
+    try:
+        strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
+        strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
+
+    except:
+        print(f'Couldnt load {start_point}, {end_point}')
+        print('SKIPPING')
+        return None, None
 
     t0 = int(strainL1.t0 / u.s)
 
@@ -173,10 +179,10 @@ def whiten_bandpass_resample(
     # Whiten, bandpass, and resample
     strainL1 = strainL1.resample(sample_rate)
     strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    
+
     strainH1 = strainH1.resample(sample_rate)
     strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-        
+
     return [strainH1, strainL1]
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
@@ -188,11 +194,11 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*3600))
 
         data = data_[:, start:end]
-        
+
         #DEVICE = torch.device(f'cuda:{args.gpu}')
-        model_path = ["output/O3av2/trained/models/bbh.pt", 
-                    "output/O3av2/trained/models/sglf.pt", 
-                    "output/O3av2/trained/models/sghf.pt", 
+        model_path = ["output/O3av2/trained/models/bbh.pt",
+                    "output/O3av2/trained/models/sglf.pt",
+                    "output/O3av2/trained/models/sghf.pt",
                     "output/O3av2/trained/models/background.pt",
                         "output/O3av2/trained/models/glitches.pt"]
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
@@ -222,13 +228,13 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
 
         final_values, midpoints = full_evaluation(
-                        data[None, :, :], models_path, DEVICE, 
+                        data[None, :, :], models_path, DEVICE,
                         return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
-        
+
         final_values = final_values[0]
 
-        # Set the threshold here    
-        FAR_2days = 1.5 # lowest FAR bin we want to worry about
+        # Set the threshold here
+        FAR_2days = 0.5 # lowest FAR bin we want to worry about
 
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
@@ -240,16 +246,16 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
             kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
         indices = torch.where(smoothed_scores < FAR_2days)[0]
-        
+
         if len(indices) == 0: return None  # Didn't find anything
-        
+
         indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
         filtered_final_score = smoothed_scores.index_select(0, indices)
         filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
         indices = indices.detach().cpu().numpy()
         # extract important "events" with indices
-        timeslide_chunks, edge_check_filter = extract_chunks(data, 0, 
+        timeslide_chunks, edge_check_filter = extract_chunks(data, 0,
                                             midpoints[indices],
                                             DEVICE, window_size=1024) # 0.25 seconds on either side
                                                                     # so it should come out to desired 0.5
@@ -268,7 +274,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             for i, strain_segment in enumerate(timeslide_chunks):
                 passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
                                                             short_relation, long_relation))
-                
+
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
@@ -300,16 +306,16 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             for i in range(scaled_evals.shape[1]):
                 line_type = "-"
                 if i% 2 == 1:
-                    line_type = "--"    
+                    line_type = "--"
                 if i % 2 == 0 or labels[i] in ["freq corr"]:
 
-                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i], 
+                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
                                 label = labels[i], c=cols[i//2], linestyle=line_type)
                 else:
-                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i], 
+                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
                                     c=cols[i//2], linestyle=line_type)
 
-            
+
             axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
             axs[1, 0].plot([], [], '-', label="Hanford", c="black")
             axs[1, 0].plot([], [], '--', label="Livingston", c="black")
@@ -342,7 +348,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 t = np.array(H_hq.xindex)
                 #t=strain_ts *1000
                 t -= t[0]
-                
+
                 im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T)
                 fig.colorbar(im_H, ax=axs[0, 1], label = "spectral power")
                 axs[0, 1].set_yscale("log")
@@ -356,7 +362,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 axs[1, 1].set_xlabel("Time (ms)")
                 axs[1, 1].set_ylabel("Freq (Hz)")
                 axs[1, 1].set_title("Livingston Q-Transform")
-                
+
             best_far = "NOFAR"
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             print("best_score", best_score)
@@ -368,7 +374,7 @@ def main(args):
         os.makedirs(args.savedir)
     except FileExistsError:
         None
-    gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv", 
+    gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv",
                                   1238166018, 1253977218)
 
     valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
@@ -379,7 +385,7 @@ def main(args):
         # testing code
         print("valid segments", valid_segments)
         A = 1243303084
-        A = 1251008449  
+        A = 1251008449
         A = 1242440636
         A = 1240316625
         B = A + 3600*3//2
@@ -389,13 +395,20 @@ def main(args):
         get_evals(data, trained_path, args.savedir, int(A), [H, L])
         assert 0
 
+    f_segments = 'output/done_O3a_segments.npy'
+    if not os.path.exists(f_segments):
+        np.save(f_segments, np.array([0]))
+
     for A, B in valid_segments:
+        done_segments = np.load(f_segments)
+        if A in done_segments and B in done_segments: continue
         if B - A >= 1800:
             print("Working on", A, B)
             H, L = whiten_bandpass_resample(A, B)
+            if H is None and L is None: continue
             data = np.vstack([np.array(H.data), np.array(L.data)])
             get_evals(data, trained_path, args.savedir, int(A), [H, L])
-
+            np.save(f_segments, np.concatenate((done_segments, [A], [B])))
 
 
 if __name__ == '__main__':
