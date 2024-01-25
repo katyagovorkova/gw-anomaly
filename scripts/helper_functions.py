@@ -1015,7 +1015,7 @@ def split_into_segments(data,
     return result
 
 
-def split_into_segments_torch(data,
+def split_into_segments_torch_(data,
                               overlap=SEGMENT_OVERLAP,
                               seg_len=SEG_NUM_TIMESTEPS,
                               device=None):
@@ -1063,6 +1063,16 @@ def split_into_segments_torch(data,
         result[:, -i, :, :] = data[:, :, start:end]
 
     return result
+
+def split_into_segments_torch(data,
+                              overlap=SEGMENT_OVERLAP, 
+                              seg_len=SEG_NUM_TIMESTEPS, 
+                              device=None):
+
+    #batch, n_detec, data
+    return data.unfold(dimension=2,
+                       size=seg_len,
+                       step=overlap).swapaxes(1, 2).float()
 
 
 def pearson_computation(data,
@@ -1308,9 +1318,8 @@ def compute_required_pearson(strens, relation):
     return required_pearsons
 
 def single_condition(required, actual, mult_bar=0.67, add_bar=0.1, debug=False):
-    # does it pass?
-    #if not actual < (required+add_bar) * mult_bar:
-    #    print("required, actual, mod actual", required, actual, (required+add_bar) * mult_bar)
+    if debug:
+        print(f"actual= {actual:.3f}, required={required:.3f}, mod required: {(required+add_bar) * mult_bar}")
     return  actual < (required+add_bar) * mult_bar
 
 def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
@@ -1319,7 +1328,8 @@ def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
     for i in range(len(required)):
         if not single_condition(required[i], actual[i], debug=debug):
             failed_count += 1
-
+    if debug:
+        print(f"failed count, {failed_count}, len(required), {len(required)}")
     return failed_count / len(required) < failed_fraction  
 
 def pairwise_symmetry_condition(scores):
@@ -1350,12 +1360,17 @@ def joint_heuristic_test(strain, gwak_features, short_relation, long_relation):
     # for the long range
     long_required_pearson = compute_required_pearson(long[0], long_relation)
     #print(pairwise_symmetry_condition(gwak_features), single_condition(long_required_pearson, long[1]), iterated_condition(short_required_pearson, short[1]))
+    if 0:
+        if pairwise_symmetry_condition(gwak_features):
+            print("pairwise symmetry passed", gwak_features)#
+        
+        if single_condition(long_required_pearson, long[1]):
+            print("long condition passed")
+            single_condition(long_required_pearson, long[1], debug=True)
 
-    #if not pairwise_symmetry_condition(gwak_features):
-    #    print("pairwise symmetry failed", gwak_features)
-
-    #if not single_condition(long_required_pearson, long[1]):
-    #    print("long condition failed")
-    #    single_condition(long_required_pearson, long[1], debug=True)
+        if pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1]):
+            print("short condition (and others) passed")
+            iterated_condition(short_required_pearson, short[1], debug=True)    
+        
 
     return pairwise_symmetry_condition(gwak_features) and single_condition(long_required_pearson, long[1]) and iterated_condition(short_required_pearson, short[1])
