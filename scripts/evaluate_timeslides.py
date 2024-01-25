@@ -161,7 +161,8 @@ def main(args):
         clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
         data = data[:, :, :clipped_time_axis]
 
-        segments = split_into_segments_torch(data, device=DEVICE)
+        segments = split_into_segments_torch(data, for_timeslides=True)
+
         segments_normalized = std_normalizer_torch(segments)
 
         RNN_precomputed_all = full_evaluation(
@@ -171,6 +172,7 @@ def main(args):
         # extract the batch size
         RNN_precomputed = {}
         for key in ["bbh", "sghf", "sglf"]:
+            print(f"HERE {RNN_precomputed_all[key][0].shape}")
             RNN_precomputed[key] = RNN_precomputed_all[key][0]
         batch_size_ = RNN_precomputed_all['bbh'][1]
 
@@ -190,7 +192,7 @@ def main(args):
             timeslide[:, :, 1, :] = torch.roll(timeslide[:, :, 1, :], roll_amount, dims=1)
 
             # now roll the intermediate LSTM values
-            # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1), 
+            # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1),
             # so Lx should have the latter indicies
             for key in ["bbh", "sghf", "sglf"]:
                 RNN_precomputed[key][:, 128:] = torch.roll(RNN_precomputed[key][:, 128:], roll_amount, dims=0)
@@ -200,14 +202,18 @@ def main(args):
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
                     precomputed_rnn=RNN_precomputed, batch_size=batch_size_, already_split=True)
 
-            # sanity check 
-            sanity_check = False
+            # sanity check
+            sanity_check = True
             if sanity_check:
                 final_values_, _ = full_evaluation(
                     segments_normalized, model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
                 print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
-
+                segments_ = split_into_segments_torch(data, device=DEVICE)
+                segments_normalized_ = std_normalizer_torch(segments_)
+                print(f'segments shape: {segments_normalized[:,1,1,:10]}')
+                print(f'segments shape: {segments_normalized_[:,1,1,:10]}')
+                print("sanity check 1.5.1", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
             # remove the dummy batch dimension of 1
             final_values = final_values[0]
 
