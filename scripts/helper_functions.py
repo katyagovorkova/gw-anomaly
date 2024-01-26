@@ -1083,12 +1083,12 @@ def split_into_segments_torch(data,
     print(f'Data shape before {data.shape}')
 
     #batch, n_detec, data
-    if for_timeslides: data = torch.concat((data, data[:,:,:SEG_NUM_TIMESTEPS]), axis=-1)
+    if for_timeslides: data = torch.concat((data, data[:,:,:200]), axis=-1)
     print(f'Data shape after {data.shape}')
 
     return data.unfold(dimension=2,
-                       size=seg_len,
-                       step=overlap).swapaxes(1, 2).float()
+                       size=seg_len, # 200
+                       step=overlap).swapaxes(1, 2).float() # 50
 
 def pearson_computation(data,
                         device,

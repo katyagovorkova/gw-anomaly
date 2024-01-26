@@ -162,8 +162,9 @@ def main(args):
         data = data[:, :, :clipped_time_axis]
 
         segments = split_into_segments_torch(data, for_timeslides=True)
-
+        print(f'segment before norm shape: {segments.shape}')
         segments_normalized = std_normalizer_torch(segments)
+        print(f'segment norm shape: {segments_normalized.shape}')
 
         RNN_precomputed_all = full_evaluation(
                     segments_normalized, model_path, DEVICE,
@@ -172,11 +173,11 @@ def main(args):
         # extract the batch size
         RNN_precomputed = {}
         for key in ["bbh", "sghf", "sglf"]:
-            print(f"HERE {RNN_precomputed_all[key][0].shape}")
             RNN_precomputed[key] = RNN_precomputed_all[key][0]
-        batch_size_ = RNN_precomputed_all['bbh'][1]
+        batch_size_ = RNN_precomputed_all['bbh'][1] - 4
 
-        timeslide = segments_normalized
+        timeslide = std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
+        print(f'timeslide norm shape {timeslide.shape}')
         gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
         for timeslide_num in range(1, n_timeslides + 1):
@@ -194,26 +195,31 @@ def main(args):
             # now roll the intermediate LSTM values
             # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1),
             # so Lx should have the latter indicies
+            RNN_precomputed_for_eval = {}
             for key in ["bbh", "sghf", "sglf"]:
                 RNN_precomputed[key][:, 128:] = torch.roll(RNN_precomputed[key][:, 128:], roll_amount, dims=0)
+                RNN_precomputed_for_eval[key] =  RNN_precomputed[key][:-4]
             #print("in evaluate timeslides, RNN computed value", RNN_precomputed['bbh'][0, 120:136])
+            print(f'timeslide {timeslide.shape}, rnn {RNN_precomputed_for_eval["bbh"].shape}')
             final_values, midpoints = full_evaluation(
                     timeslide, model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
-                    precomputed_rnn=RNN_precomputed, batch_size=batch_size_, already_split=True)
+                    precomputed_rnn=RNN_precomputed_for_eval, batch_size=batch_size_, already_split=True)
 
             # sanity check
             sanity_check = True
             if sanity_check:
-                final_values_, _ = full_evaluation(
-                    segments_normalized, model_path, DEVICE,
-                    return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
-                print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
                 segments_ = split_into_segments_torch(data, device=DEVICE)
                 segments_normalized_ = std_normalizer_torch(segments_)
                 print(f'segments shape: {segments_normalized[:,1,1,:10]}')
                 print(f'segments shape: {segments_normalized_[:,1,1,:10]}')
-                print("sanity check 1.5.1", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
+                # print("sanity check 1.5.1", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
+                final_values_, _ = full_evaluation(
+                    segments_normalized_, model_path, DEVICE,
+                    return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
+                print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
+                print(f'final values {final_values[0,:5,:]}')
+                print(f'final values_ {final_values_[0,:5,:]}')
             # remove the dummy batch dimension of 1
             final_values = final_values[0]
 
