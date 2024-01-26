@@ -22,6 +22,34 @@ from config import (
     MODELS_LOCATION,
     SEG_NUM_TIMESTEPS
     )
+def compute_signal_strength_chop_sep(x, y):
+    psd0 = welch(x)[1]
+    psd1 = welch(y)[1]
+    HLS = np.log(np.sum(psd0))
+    LLS = np.log(np.sum(psd1))
+    return HLS, LLS
+def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+    # works for one window at a time
+    Hs = H[H_start:H_end]
+    minval = 1
+    for shift in range(-maxshift, maxshift):
+        Ls = L[H_start+shift:H_end+shift]
+        #minval = min(pearsonr(Hs, Ls)[0], minval)
+        p = pearsonr(Hs, Ls)[0]
+        if p < minval:
+            minval = p
+            shift_idx = shift
+        
+    return minval, shift_idx
+
+def parse_strain(x):
+    # take strain, compute the long sig strenght & pearson
+    # split it up, do the same thing for short
+    long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
+    #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
+    HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
+    return long_pearson, HSS, LSS    
+
 from helper_functions import far_to_metric, compute_fars, load_gwak_models, joint_heuristic_test, combine_freqcorr
 DEVICE = torch.device(GPU_NAME)
 from scipy.signal import welch
@@ -185,6 +213,18 @@ def whiten_bandpass_resample(
 
     return [strainH1, strainL1]
 
+def extract(gwak_values):
+    result = np.zeros((gwak_values.shape[0], 3))
+    for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
+        a, b = pair
+        ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
+        ratio_b = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, a]) + 2)
+
+        ratio = np.maximum(ratio_a, ratio_b)
+        result[:, i] = ratio
+
+    return result
+
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
     # split the data into 1-hour chunks to fit in memory best
     N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
@@ -271,11 +311,16 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             N_initial = len(filtered_final_score)
             combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
             passed_heuristics = []
+
+            #print()
             for i, strain_segment in enumerate(timeslide_chunks):
+                print(filtered_final_score[i])
+                print(parse_strain(strain_segment))
+                print(filtered_final_scaled_evals[i])
                 passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
                                                             short_relation, long_relation))
 
-
+            assert 0
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
             filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
@@ -380,15 +425,15 @@ def main(args):
     valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
     trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
 
-    run_short_test = False
+    run_short_test = True
     if run_short_test:
         # testing code
         print("valid segments", valid_segments)
         A = 1243303084
-        A = 1251008449
-        A = 1242440636
-        A = 1240316625
-        B = A + 3600*3//2
+        #A = 1251008449
+        #A = 1242440636
+        #A = 1240316625
+        B = A + 3600#*3//2
         H, L = whiten_bandpass_resample(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
 

@@ -2,6 +2,8 @@ import os
 import argparse
 import numpy as np
 import torch
+from scipy.signal import welch
+from scipy.stats import pearsonr
 from models import LinearModel
 from gwak_predict import quak_eval
 from helper_functions import (
@@ -29,8 +31,35 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
 
 )
+def compute_signal_strength_chop_sep(x, y):
+    psd0 = welch(x)[1]
+    psd1 = welch(y)[1]
+    HLS = np.log(np.sum(psd0))
+    LLS = np.log(np.sum(psd1))
+    return HLS, LLS
+def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+    # works for one window at a time
+    Hs = H[H_start:H_end]
+    minval = 1
+    for shift in range(-maxshift, maxshift):
+        Ls = L[H_start+shift:H_end+shift]
+        #minval = min(pearsonr(Hs, Ls)[0], minval)
+        p = pearsonr(Hs, Ls)[0]
+        if p < minval:
+            minval = p
+            shift_idx = shift
+        
+    return minval, shift_idx
 
 
+def parse_strain(x):
+    # take strain, compute the long sig strenght & pearson
+    # split it up, do the same thing for short
+    long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
+    #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
+    HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
+    return long_pearson, HSS, LSS    
+    
 def full_evaluation(data, model_folder_path, device, return_midpoints=False,
                     loaded_models=None, selection=None, grad_flag=True,
                     already_split=False, precomputed_rnn=None, batch_size=None, do_rnn_precomp=False):
@@ -123,7 +152,9 @@ def main(args):
 
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
-
+    #print(args.data_path)
+    #assert 0
+    SNRs = np.load(f"{args.data_path[:-4]}_SNR.npz.npy")
     data = np.load(args.data_path)['data']
     print(f'loaded data shape: {data.shape}')
     if data.shape[0] == 2:
@@ -165,6 +196,9 @@ def main(args):
         long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
         short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         passed = []
+        build_dataset_strain = []
+        build_data_gwak_features = []
+        print("201", scaled_evals.shape)
         for i in range(len(data)):
             #strain_center = midpoints[strongest[i]]
             #print(midpoints[strongest[i]], strongest[i])
@@ -179,19 +213,34 @@ def main(args):
             elif args.save_path[:-4].split("/")[-1] == "supernova_varying_snr_evals":
                 strain_center = 10850
                 eval_strongest_loc = 218
-            #print("171", np.where(strongest==7300))
-            #print(data[i, :, strain_center-1024:strain_center+1024].shape, combine_freqcorr(scaled_evals[i]).shape)
-            #print("strain center", strain_center)
-            passed.append(joint_heuristic_test(
-                                data[i, :, strain_center-1024:strain_center+1024],
-                                 combine_freqcorr(scaled_evals[i])[eval_strongest_loc],
-                                 short_relation,
-                                 long_relation))
-            print(f"Computing heuristic test {i}/{len(data)}" , end = '\r')
-        passed = np.array(passed)
-        print("177", passed.sum())
+            if 0:
+                passed.append(joint_heuristic_test(
+                                    data[i, :, strain_center-1024:strain_center+1024],
+                                    combine_freqcorr(scaled_evals[i])[eval_strongest_loc],
+                                    short_relation,
+                                    long_relation))
+            if SNRs[i] > 12:
+                seg = data[i, :, strain_center-1024:strain_center+1024]
+                pearson_, HSS, LSS = parse_strain(seg)
+                build_dataset_strain.append([pearson_, HSS, LSS])
+                build_data_gwak_features.append(scaled_evals[i][eval_strongest_loc])
+            print(f"Computing heuristic test {i}/{len(data)}, SNR {SNRs[i]}" , end = '\r')
 
-        np.save(f"{args.save_path[:-4]}_heuristic_res.npy", passed)
+        # save the heuristic cut dataset
+        heuristic_dir = f"{os.path.dirname(args.save_path)}/heuristic/"
+        print("heuritic dir", heuristic_dir)
+        try:
+            os.makedirs(heuristic_dir)
+        except FileExistsError:
+            None
+        class_name = args.save_path.split("/")[-1].split("_")[0]
+        np.save(f"{heuristic_dir}/{class_name}_strain.npy", np.array(build_dataset_strain))
+        np.save(f"{heuristic_dir}/{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
+            
+        #passed = np.array(passed)
+        #print("177", passed.sum())
+
+        #np.save(f"{args.save_path[:-4]}_heuristic_res.npy", passed)
 
 if __name__ == '__main__':
 
