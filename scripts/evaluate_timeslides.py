@@ -174,9 +174,9 @@ def main(args):
         RNN_precomputed = {}
         for key in ["bbh", "sghf", "sglf"]:
             RNN_precomputed[key] = RNN_precomputed_all[key][0]
-        batch_size_ = RNN_precomputed_all['bbh'][1] - 4
+        batch_size_ = RNN_precomputed_all['bbh'][1] -4
 
-        timeslide = std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
+        timeslide = torch.clone(segments_normalized) #std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
         print(f'timeslide norm shape {timeslide.shape}')
         gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
@@ -202,13 +202,14 @@ def main(args):
             #print("in evaluate timeslides, RNN computed value", RNN_precomputed['bbh'][0, 120:136])
             print(f'timeslide {timeslide.shape}, rnn {RNN_precomputed_for_eval["bbh"].shape}')
             final_values, midpoints = full_evaluation(
-                    timeslide, model_path, DEVICE,
+                    timeslide[:, :-4, :, :], model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
                     precomputed_rnn=RNN_precomputed_for_eval, batch_size=batch_size_, already_split=True)
 
             # sanity check
             sanity_check = True
             if sanity_check:
+                data[:, 1, :] = torch.roll(data[:, 1, :], shifts=roll_amount * SEGMENT_OVERLAP, dims=1)
                 segments_ = split_into_segments_torch(data, device=DEVICE)
                 segments_normalized_ = std_normalizer_torch(segments_)
                 print(f'segments shape: {segments_normalized[:,1,1,:10]}')
