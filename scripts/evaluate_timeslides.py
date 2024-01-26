@@ -24,6 +24,64 @@ from config import (
     )
 device_str = GPU_NAME
 heuristics_tests = True
+import torch.nn as nn
+class BasedModel(nn.Module):
+    def __init__(self):
+        super(BasedModel, self).__init__()
+
+        self.layer1 = nn.Linear(3, 1)
+        self.layer2_1 = nn.Linear(1, 1)
+        self.layer2_2 = nn.Linear(1, 1)
+        self.layer2_3 = nn.Linear(1, 1)
+        
+        self.activation = nn.Sigmoid()
+
+    def forward(self, x):
+        x1 = self.activation(self.layer1(x[:, :3]))
+        x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
+        x2_2 = self.activation(self.layer2_1(x[:, 4:5]))
+        x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
+        return x1 * x2_1 * x2_2 * x2_3
+
+def extract(gwak_values):
+    result = np.zeros((gwak_values.shape[0], 3))
+    for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
+        a, b = pair
+        ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
+        ratio_b = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, a]) + 2)
+
+        ratio = np.maximum(ratio_a, ratio_b)
+        result[:, i] = ratio
+
+    return result
+
+def compute_signal_strength_chop_sep(x, y):
+    psd0 = welch(x)[1]
+    psd1 = welch(y)[1]
+    HLS = np.log(np.sum(psd0))
+    LLS = np.log(np.sum(psd1))
+    return HLS, LLS
+def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+    # works for one window at a time
+    Hs = H[H_start:H_end]
+    minval = 1
+    for shift in range(-maxshift, maxshift):
+        Ls = L[H_start+shift:H_end+shift]
+        #minval = min(pearsonr(Hs, Ls)[0], minval)
+        p = pearsonr(Hs, Ls)[0]
+        if p < minval:
+            minval = p
+            shift_idx = shift
+        
+    return minval, shift_idx
+
+def parse_strain(x):
+    # take strain, compute the long sig strenght & pearson
+    # split it up, do the same thing for short
+    long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
+    #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
+    HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
+    return long_pearson, HSS, LSS   
 
 def event_clustering(indices, scores, spacing, device):
     '''
@@ -86,6 +144,9 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
 
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
+    model_heuristic = BasedModel().to(DEVICE)
+    model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
+
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
     gwak_models = load_gwak_models(model_path, DEVICE, f'cuda:{args.gpu}')
@@ -154,8 +215,6 @@ def main(args):
         print(f'N timeslides = {n_timeslides}, sample length = {sample_length}')
         print('Number of timeslides:', n_timeslides)
 
-
-        
         data = data[None, :, :]
         assert data.shape[1] == 2
         clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
@@ -177,7 +236,7 @@ def main(args):
         batch_size_ = RNN_precomputed_all['bbh'][1] -4 #only this much going into the eval at once
 
         timeslide = torch.clone(segments_normalized) #std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
-        print(f'timeslide norm shape {timeslide.shape}')
+        #print(f'timeslide norm shape {timeslide.shape}')
         gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
         for timeslide_num in range(1, n_timeslides + 1):
@@ -220,21 +279,13 @@ def main(args):
                     segments_normalized_, model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
                 final_values_ = final_values_[:, :-1]
-                #print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
-                
-                #print(f'final values {final_values[0,:5,:]}')
-                #print(f'final values_ {final_values_[0,:5,:]}')
-                for k in range(100):
-                    v = torch.mean(torch.abs(final_values[0,k,:] - final_values_[0,k,:]))
-                    if v.item() != 0:
-                        print("IBWRI", k, v)
             # remove the dummy batch dimension of 1
             final_values = final_values[0]
 
             save_full_timeslide_readout = True
             if save_full_timeslide_readout:
 
-                FAR_2days = -2 # lowest FAR bin we want to worry about
+                FAR_2days = -1 # lowest FAR bin we want to worry about
 
                 # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
                 final_values_slx = (final_values - mean_norm)/std_norm
@@ -269,12 +320,25 @@ def main(args):
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
 
                     #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
+                    
                     if heuristics_tests:
-                        combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
                         passed_heuristics = []
+                        gwak_filtered = extract(filtered_final_scaled_evals)
                         for i, strain_segment in enumerate(timeslide_chunks):
-                            passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
-                                                                        short_relation, long_relation))
+                            strain_feats = parse_strain(strain_segment)
+                            together = np.concatenate([strain_feats, gwak_filtered[i]])
+                            res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+                            passed_heuristics.append(res<0.46)
+
+                        #print(np.array(passed_heuristics).sum(), len(passed_heuristics))
+                        #assert 0
+
+
+                        #combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
+                       # 
+                       # for i, strain_segment in enumerate(timeslide_chunks):
+                       #     passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
+                        #                                                short_relation, long_relation))
                             
                         #print("passed heuristics:", passed_heuristics)
 

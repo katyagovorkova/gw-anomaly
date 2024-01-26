@@ -217,18 +217,18 @@ def make_roc_curve(bkg_evals, sig_evals):
     for thresh in np.linspace(0, 1.01, 100):
         points.append([(bkg_evals < thresh).sum()/len(bkg_evals),
                        (sig_evals < thresh).sum()/len(sig_evals) ])
-    points2 = []
-    for thresh in [0.3, 0.35, 0.4, 0.42, 0.45, 0.5, 0.52, 0.55]:
-        points2.append([(bkg_evals < thresh).sum()/len(bkg_evals),
-                       (sig_evals < thresh).sum()/len(sig_evals) ])
+    #points2 = []
+    #for thresh in [0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55]:
+    #    points2.append([(bkg_evals < thresh).sum()/len(bkg_evals),
+    #                   (sig_evals < thresh).sum()/len(sig_evals) ])
         
     points = np.array(points)
     plt.plot(points[:, 0], points[:, 1])
     plt.xlabel("FPR")
     plt.ylabel("TPR")
 
-    for i, elem in enumerate(points2):
-        plt.scatter(elem[0], elem[1], label = "cutoff" + str([0.3, 0.35, 0.4, 0.42, 0.45, 0.5, 0.52, 0.55][i]))
+    #for i, elem in enumerate(points2):
+    #    plt.scatter(elem[0], elem[1], label = "cutoff" + str([0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55][i]))
     #plt.loglog()
     plt.legend()
     plt.ylim(0.85, 1.01)
@@ -261,7 +261,7 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
             #if i > 50:
             #    assert 0
             counts[k] += 1
-            if model_pred[i] < 0.5:
+            if model_pred[i] < 0.47:
                 post_heur_counts[k] += 1
 
         #print(counts)
@@ -282,7 +282,8 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
 
 #print(together.shape)
 #assert 0
-
+plt.scatter(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:])
+plt.savefig(f"output/plots/scatterman.png", dpi=300)
 
 make_roc_curve(model(bkg_data_val).detach().cpu().numpy(), model(sig_data_val).detach().cpu().numpy())
 heuristic_cut_performance_plot(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:], "bkg")

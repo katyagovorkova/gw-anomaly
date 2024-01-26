@@ -8,7 +8,7 @@ MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/
 FM_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/'
 
 # GPU
-GPU_NAME = 'cuda:2'
+GPU_NAME = 'cuda:0'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
