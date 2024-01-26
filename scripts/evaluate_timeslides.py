@@ -129,7 +129,6 @@ def main(args):
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
 
     roll_amount = SEG_NUM_TIMESTEPS // SEGMENT_OVERLAP
-    print("roll amount", roll_amount)
     ts = time.time()
     not_finished = True
     initial_roll = 0
@@ -162,10 +161,12 @@ def main(args):
         clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
         data = data[:, :, :clipped_time_axis]
 
-        segments = split_into_segments_torch(data, device=DEVICE)
+        segments = split_into_segments_torch(data, for_timeslides=True)
+        #print(f'segment before norm shape: {segments.shape}')
         segments_normalized = std_normalizer_torch(segments)
-        print("ASDASDSAD, ", segments_normalized.shape)
-        RNN_precomputed_all = full_evaluation(
+        #print(f'segment norm shape: {segments_normalized.shape}')
+
+        RNN_precomputed_all = full_evaluation( # with the extra stuff
                     segments_normalized, model_path, DEVICE,
                     return_midpoints=True, loaded_models=None, grad_flag=False,
                     do_rnn_precomp=True, already_split=True)
@@ -173,99 +174,60 @@ def main(args):
         RNN_precomputed = {}
         for key in ["bbh", "sghf", "sglf"]:
             RNN_precomputed[key] = RNN_precomputed_all[key][0]
-        batch_size_ = RNN_precomputed_all['bbh'][1]
+        batch_size_ = RNN_precomputed_all['bbh'][1] -4 #only this much going into the eval at once
 
-        timeslide = segments_normalized
-        OG0 = torch.clone(segments_normalized)
-        gwak_models = load_gwak_models(args.model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
-        print(data.shape)
-        ex_ = data[0, 1, 250:450]
-        print(segments.shape)
-        print("SANITY -1", torch.sum(torch.abs(segments[0, 5, 1]-ex_)))
-        #assert 0
-        segments = None
-        #data___ = torch.clone(data)
+        timeslide = torch.clone(segments_normalized) #std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
+        print(f'timeslide norm shape {timeslide.shape}')
+        gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
+
         for timeslide_num in range(1, n_timeslides + 1):
-            print("\n")
-            print("cumulative", timeslide_num*roll_amount)
             computed_hist = None
-            show_throughput = False
-            if show_throughput:
-                if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
+            if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
             ts = time.time()
 
             if timeslide_num * roll_amount > sample_length * SAMPLE_RATE:
                 #going into degeneracy now, looped all the way around
                 break
             # roll the segments - note that the windowing already happened
-            print("185", segments_normalized.shape, segments_normalized[:, :, 1, :].shape, RNN_precomputed['bbh'][:, 128:].shape)
-            #prev_iter = torch.clone(segments_normalized)
-            print(segments_normalized[:, :, 1, :].shape, segments_normalized.shape)
-            segments_normalized[:, :, 1, :] = torch.roll(segments_normalized[:, :, 1, :], roll_amount, dims=1)
-            #segments_normalizedXX = torch.clone(segments_normalized)
+            #print("185", timeslide[:, :, 1, :].shape, RNN_precomputed['bbh'][:, 128:].shape)
+            timeslide[:, :, 1, :] = torch.roll(timeslide[:, :, 1, :], roll_amount, dims=1)
 
-            #segments_normalized[0, :, 1, roll_amount:] = segments_normalizedXX[0, :, 1, :-roll_amount]
-            #segments_normalized[0, :, 1, :roll_amount] = segments_normalizedXX[0, :, 1, -roll_amount:]
-            #segments[0, :, 1, :] = torch.roll(segments[0, :, 1, :], roll_amount, dims=1)
-            #print("sanity check 0", torch.sum(torch.abs(prev_iter[:, :, 1, :]-segments_normalized[:, :, 1, :] )))
-            #print("sanity check 0.5", torch.sum(torch.abs(torch.roll(OG0[:, :, 1, :], roll_amount*timeslide_num, dims=1)- segments_normalized[:, :, 1, :])))
             # now roll the intermediate LSTM values
-            # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1), 
+            # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1),
             # so Lx should have the latter indicies
+            RNN_precomputed_for_eval = {}
+            #print("199", timeslide.shape, RNN_precomputed['bbh'].shape)
             for key in ["bbh", "sghf", "sglf"]:
                 RNN_precomputed[key][:, 128:] = torch.roll(RNN_precomputed[key][:, 128:], roll_amount, dims=0)
+                RNN_precomputed_for_eval[key] =  RNN_precomputed[key][:-4]
             #print("in evaluate timeslides, RNN computed value", RNN_precomputed['bbh'][0, 120:136])
-            #if 0:
+            #print(f'timeslide {timeslide.shape}, rnn {RNN_precomputed_for_eval["bbh"].shape}')
             final_values, midpoints = full_evaluation(
-                    segments_normalized, args.model_path, DEVICE, 
+                    timeslide[:, :-4, :, :], model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
-                    precomputed_rnn=RNN_precomputed, batch_size=batch_size_, already_split=True)
+                    precomputed_rnn=RNN_precomputed_for_eval, batch_size=batch_size_, already_split=True)
 
-            # sanity check 
-            print("AAA", roll_amount, roll_amount * SEGMENT_OVERLAP)
-            sanity_check = True
+            # sanity check
+            sanity_check = False
             if sanity_check:
-                #final_values_, _ = full_evaluation(
-                ##    segments_normalized, args.model_path, DEVICE, 
-                 #   return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
-                #print("sanity check 1:", torch.mean(torch.abs(final_values - final_values_)))
-                #data = torch.clone(data)
-                print("216", data.shape)
-                print("ERIC BAD AT CHESS", data[:, 1, :].shape)
                 data[:, 1, :] = torch.roll(data[:, 1, :], shifts=roll_amount * SEGMENT_OVERLAP, dims=1)
-                if 0:
-                    dataXX = torch.clone(data)
-                    BRO = roll_amount*SEGMENT_OVERLAP
-                    data[:, 1, BRO:] = dataXX[:, 1, :-BRO]
-                    data[:, 1, :BRO] = dataXX[:, 1, -BRO:]
-                #data_ = torch.clone(data)
-                #data_[:, 1, :-roll_amount*SEGMENT_OVERLAP] = data[:, 1, roll_amount*SEGMENT_OVERLAP:]
-                #data = data_
                 segments_ = split_into_segments_torch(data, device=DEVICE)
                 segments_normalized_ = std_normalizer_torch(segments_)
-                print("sanity check 1.5.1", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
-
-                print("238", segments_normalized.shape)
-                if 0:
-                    for i in range(segments_normalized.shape[1]):
-
-                        res = torch.sum(torch.abs(segments_normalized[0, i,1,:10] - segments_normalized_[0, i,1,:10]))
-                        if res > 0.01:
-                            print(i)
-                        else:
-                            print("MHMM", i, end = "\r  ")
-                    print("MHMM")
-                #print((segments_normalized[0, 8,1,:10], segments_normalized_[0, 4,1,:10]))
-                print("sanity check 1.5", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
-                #print("sanity check 1.75", torch.sum(torch.abs(segments_normalized_ - segments_normalized__)))
+                #print(f'segments shape: {segments_normalized[:,1,1,:10]}')
+                #print(f'segments shape: {segments_normalized_[:,1,1,:10]}')
+                # print("sanity check 1.5.1", torch.sum(torch.abs(segments_normalized - segments_normalized_)))
                 final_values_, _ = full_evaluation(
-                    data, args.model_path, DEVICE, 
-                    return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=False)
-                #rint('264', .shape)
-                #assert 0
-                print(torch.where(torch.mean(torch.abs(final_values - final_values_), axis=2)[0]!=0))
-                print("sanity check #2:", torch.mean(torch.abs(final_values - final_values_)))
-                print("AAAAAAAAAAAAAAAAAAAAAAAAAAAAA")
+                    segments_normalized_, model_path, DEVICE,
+                    return_midpoints=True, loaded_models=gwak_models_, grad_flag=False, already_split=True)
+                final_values_ = final_values_[:, :-1]
+                #print("sanity check:", torch.mean(torch.abs(final_values - final_values_)))
+                
+                #print(f'final values {final_values[0,:5,:]}')
+                #print(f'final values_ {final_values_[0,:5,:]}')
+                for k in range(100):
+                    v = torch.mean(torch.abs(final_values[0,k,:] - final_values_[0,k,:]))
+                    if v.item() != 0:
+                        print("IBWRI", k, v)
             # remove the dummy batch dimension of 1
             final_values = final_values[0]
 
@@ -285,7 +247,7 @@ def main(args):
                 smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
-
+               
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
                     
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
@@ -305,7 +267,6 @@ def main(args):
                     filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
                     filtered_final_score = filtered_final_score[edge_check_filter]
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
-                    indices_ = indices_[edge_check_filter]
 
                     #print("386", filtered_final_scaled_evals.shape, timeslide_chunks.shape)
                     if heuristics_tests:
@@ -319,11 +280,6 @@ def main(args):
 
                         #filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
                         filtered_final_score = filtered_final_score[passed_heuristics]
-                        indices_ = indices_[passed_heuristics]
-
-                    print("flagged points", midpoints[indices_])
-
-                    print("final score, after heuristics", filtered_final_score)
                     
                     if len(filtered_final_score) > 0:
                         computed_hist = np.histogram(filtered_final_score, bins=1000, range=(-20, 20))[0]
@@ -377,19 +333,16 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     histogram = np.zeros(1000)
-    print("Histogram path", f"{args.save_evals_path}_timeslide_hist.npy")
     if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
         np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
-    # reset the histogram, REMOVE THIS
-    np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
+
     folder_path = args.data_path
     print(folder_path)
     #p = np.random.permutation(len(os.listdir(folder_path)))
 
     print("N files", args.files_to_eval)
     save_evals_path = args.save_evals_path
-    #for i, filename in enumerate(np.array(os.listdir(folder_path))):#[p]):
-    for i, filename in enumerate(["1244345526_1244349126.npy"]):
+    for i, filename in enumerate(np.array(os.listdir(folder_path))):#[p]):
 
         if i >= args.files_to_eval and args.files_to_eval != -1:
             break
@@ -399,6 +352,5 @@ if __name__ == '__main__':
             args.data_path = os.path.join(folder_path, filename)
             #args.save_evals_path = f"{save_evals_path}"
             #os.makedirs(args.save_evals_path, exist_ok=True)
-            print(f"Started running on {filename}")
             main(args)
             print(f'Finished running on {filename}')

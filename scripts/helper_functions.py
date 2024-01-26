@@ -1018,7 +1018,8 @@ def split_into_segments(data,
 def split_into_segments_torch_(data,
                               overlap=SEGMENT_OVERLAP,
                               seg_len=SEG_NUM_TIMESTEPS,
-                              device=None):
+                              device=None,
+                              for_timeslides=False):
     '''
     Function to slice up data into overlapping segments
     seg_len: length of resulting segments
@@ -1026,11 +1027,20 @@ def split_into_segments_torch_(data,
 
     assuming that data is of shape (N_samples, 2, feature_len)
     '''
-    N_slices = (data.shape[2] - seg_len) // overlap
+    if for_timeslides:
+        N_slices = (data.shape[2] - seg_len) // overlap + overlap
+    else:
+        N_slices = (data.shape[2] - seg_len) // overlap
+
     data = data[:, :, :N_slices * overlap + seg_len]
     feature_length_full = data.shape[2]
     feature_length = (data.shape[2] // SEG_NUM_TIMESTEPS) * SEG_NUM_TIMESTEPS
+
+    # if for_timeslides:
+    #     N_slices_limited = (feature_length - seg_len) // overlap + overlap
+    # else:
     N_slices_limited = (feature_length - seg_len) // overlap
+
     n_batches = data.shape[0]
     n_detectors = data.shape[1]
 
@@ -1065,15 +1075,20 @@ def split_into_segments_torch_(data,
     return result
 
 def split_into_segments_torch(data,
-                              overlap=SEGMENT_OVERLAP, 
-                              seg_len=SEG_NUM_TIMESTEPS, 
-                              device=None):
+                              overlap=SEGMENT_OVERLAP,
+                              seg_len=SEG_NUM_TIMESTEPS,
+                              device=None,
+                              for_timeslides=False):
+
+    print(f'Data shape before {data.shape}')
 
     #batch, n_detec, data
-    return data.unfold(dimension=2,
-                       size=seg_len,
-                       step=overlap).swapaxes(1, 2).float()
+    if for_timeslides: data = torch.concat((data, data[:,:,:150]), axis=-1)
+    print(f'Data shape after {data.shape}')
 
+    return data.unfold(dimension=2,
+                       size=seg_len, # 200
+                       step=overlap).swapaxes(1, 2).float() # 50
 
 def pearson_computation(data,
                         device,
