@@ -22,6 +22,37 @@ from config import (
     MODELS_LOCATION,
     SEG_NUM_TIMESTEPS
     )
+import torch.nn as nn
+class BasedModel(nn.Module):
+    def __init__(self):
+        super(BasedModel, self).__init__()
+
+        self.layer1 = nn.Linear(3, 1)
+        self.layer2_1 = nn.Linear(1, 1)
+        self.layer2_2 = nn.Linear(1, 1)
+        self.layer2_3 = nn.Linear(1, 1)
+        
+        self.activation = nn.Sigmoid()
+
+    def forward(self, x):
+        x1 = self.activation(self.layer1(x[:, :3]))
+        x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
+        x2_2 = self.activation(self.layer2_1(x[:, 4:5]))
+        x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
+        return x1 * x2_1 * x2_2 * x2_3
+
+def extract(gwak_values):
+    result = np.zeros((gwak_values.shape[0], 3))
+    for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
+        a, b = pair
+        ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
+        ratio_b = (np.abs(gwak_values[:, b]) + 2) / (np.abs(gwak_values[:, a]) + 2)
+
+        ratio = np.maximum(ratio_a, ratio_b)
+        result[:, i] = ratio
+
+    return result
+
 def compute_signal_strength_chop_sep(x, y):
     psd0 = welch(x)[1]
     psd1 = welch(y)[1]
@@ -48,7 +79,7 @@ def parse_strain(x):
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
     #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
-    return long_pearson, HSS, LSS    
+    return long_pearson, HSS, LSS   
 
 from helper_functions import far_to_metric, compute_fars, load_gwak_models, joint_heuristic_test, combine_freqcorr
 DEVICE = torch.device(GPU_NAME)
@@ -307,20 +338,19 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         indices = indices[edge_check_filter]
         filtered_timeslide_chunks = timeslide_chunks
 
+        heuristics_tests = False
         if heuristics_tests:
-            N_initial = len(filtered_final_score)
-            combined_freqcorr = combine_freqcorr(filtered_final_scaled_evals)
-            passed_heuristics = []
-
-            #print()
+            N_initial = len(filterd_final_score)
+            heuristic_inputs = []
+            #passed_heuristics = []
+            gwak_filtered = extract(filtered_final_scaled_evals)
             for i, strain_segment in enumerate(timeslide_chunks):
-                print(filtered_final_score[i])
-                print(parse_strain(strain_segment))
-                print(filtered_final_scaled_evals[i])
-                passed_heuristics.append(joint_heuristic_test(strain_segment, combined_freqcorr[i],
-                                                            short_relation, long_relation))
+                strain_feats = parse_strain(strain_segment)
+                together = np.concatenate([strain_feats, gwak_filtered[i]])
+                res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+                passed_heuristics.append(res<0.46)
 
-            assert 0
+
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
             filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
@@ -401,7 +431,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 axs[0, 1].set_ylabel("Freq (Hz)")
                 axs[0, 1].set_title("Hanford Q-Transform")
 
-                im_L = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
+                im_L  = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
                 fig.colorbar(im_L, ax=axs[1, 1], label = "spectral power")
                 axs[1, 1].set_yscale("log")
                 axs[1, 1].set_xlabel("Time (ms)")
