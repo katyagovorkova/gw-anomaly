@@ -56,6 +56,7 @@ def extract(gwak_values):
 bkg_data = [[],[]]
 signal_data = {}
 for elem in os.listdir(data_path):
+    if elem == "real_bkg_data.npy": continue
     class_name = elem.split("_")[0]
     if class_name != "bkg": 
         class_name = elem.split("_")[0]
@@ -63,6 +64,7 @@ for elem in os.listdir(data_path):
 
 bkg_metric_score = None
 for elem in os.listdir(data_path):
+    if elem == "real_bkg_data.npy": continue
     data = np.load(f"{data_path}/{elem}")
     class_name = elem.split("_")[0]
     tag = elem.split("_")[1]
@@ -87,6 +89,14 @@ for key in signal_data.keys():
 sig_data = np.concatenate(sig_data, axis=0)
 bkg_data = np.concatenate(bkg_data,axis=1)
 
+bkg_REAL = np.load(f'{data_path}/real_bkg_data.npy')
+bkg_data = bkg_REAL[:, :-1]
+bkg_metric_score = bkg_REAL[:, -1]
+
+reduction = bkg_metric_score < -5
+bkg_data = bkg_data[reduction]
+bkg_metric_score = bkg_metric_score[reduction][:, None]
+
 def sig_loss_function(evals, scale=40):
     return torch.mean(torch.sigmoid(scale * (evals-0.5)))
 
@@ -107,6 +117,7 @@ sig_data = torch.from_numpy(sig_data[p1]).float().to(device)
 bkg_data = torch.from_numpy(bkg_data[p2]).float().to(device)
 mult = np.mean(bkg_metric_score)
 orig = np.copy(bkg_metric_score[p2])
+bkg_metric_score = -1*(bkg_metric_score**2)
 fm_vals = torch.from_numpy(bkg_metric_score[p2] / np.mean(bkg_metric_score)).float().to(device)
 
 sig_val_cut = int( len(sig_data) * 0.8)
@@ -117,7 +128,7 @@ sig_data = sig_data[:sig_val_cut]
 bkg_data = bkg_data[:bkg_val_cut]
 print("train", sig_data.shape, bkg_data.shape, "val", sig_data_val.shape, bkg_data_val.shape)
 
-saved_model = True
+saved_model = False
 #model = HeuristicModel().to(device)
 model = BasedModel().to(device)
 model_save_path = "output/plots/model.h5"
@@ -125,7 +136,7 @@ if saved_model:
     model.load_state_dict(torch.load(model_save_path))
 n_epoch = 100
 optimizer = optim.Adam(model.parameters())
-n_batches = 50
+n_batches = 100
 sig_batch_size = len(sig_data)//n_batches
 bkg_batch_size = len(bkg_data)//n_batches
 
@@ -153,6 +164,7 @@ if 1:
     gwakscore = extract(gwakscore)[0]
     together = np.concatenate([first3, gwakscore])[np.newaxis,]
     special = torch.from_numpy(together).float().to(device)
+
 if not saved_model:
     for epoch in range(n_epoch):
         #print(fm_vals)
@@ -173,8 +185,8 @@ if not saved_model:
             bkg_batch = bkg_data[start:end]
             #optimizer.zero_grad()
             output = model(bkg_batch)
-            loss_bkg = bkg_loss_function(output, fm_vals[start:end]) * 3
-            
+            loss_bkg = bkg_loss_function(output, fm_vals[start:end]) * 4
+            #print("188", loss_sig.item(), loss_bkg.item())
             #special_loss = sig_loss_function(model(special)) * 0.15
             epoch_train_loss += loss_sig.item()
             epoch_train_loss += loss_bkg.item()
@@ -186,8 +198,15 @@ if not saved_model:
             loss_bkg.backward()
             optimizer.step()
             
-        
-        val_loss = bkg_loss_function(model(bkg_data_val), fm_vals[bkg_val_cut:]).item() + sig_loss_function(model(sig_data_val)).item()
+        n_val_batches = 5
+        val_loss = 0
+        val_len = len(bkg_data_val)
+        step = val_len // n_val_batches
+        for i in range(n_val_batches):
+            start, end = i*step, (i+1)*step
+            val_loss += bkg_loss_function(model(bkg_data_val[start:end]), fm_vals[bkg_val_cut:][start:end]).item()
+        val_loss /= n_val_batches
+        val_loss += sig_loss_function(model(sig_data_val)).item()
         print(f"epoch {epoch} train loss {epoch_train_loss/n_batches :.4f} val loss {val_loss :.4f} ")
         print(f"epoch {epoch} sig loss {epoch_sig_loss/n_batches :.4f} bkg loss {epoch_bkg_loss/n_batches :.4f} ")
 
@@ -231,7 +250,7 @@ def make_roc_curve(bkg_evals, sig_evals):
     #    plt.scatter(elem[0], elem[1], label = "cutoff" + str([0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55][i]))
     #plt.loglog()
     plt.legend()
-    plt.ylim(0.85, 1.01)
+    #plt.ylim(0.85, 1.01)
     plt.grid()
     plt.xscale("log")
     plt.savefig(f"output/plots/ROC_heuristic.png", dpi=300)
@@ -282,8 +301,8 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
 
 #print(together.shape)
 #assert 0
-plt.scatter(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:])
-plt.savefig(f"output/plots/scatterman.png", dpi=300)
+#plt.scatter(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:])
+#plt.savefig(f"output/plots/scatterman.png", dpi=300)
 
 make_roc_curve(model(bkg_data_val).detach().cpu().numpy(), model(sig_data_val).detach().cpu().numpy())
 heuristic_cut_performance_plot(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:], "bkg")

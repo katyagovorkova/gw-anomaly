@@ -257,6 +257,10 @@ def extract(gwak_values):
     return result
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
+    model_path = '/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5'
+    model_heuristic = BasedModel().to(DEVICE)
+    model_heuristic.load_state_dict(torch.load(model_path))
+
     # split the data into 1-hour chunks to fit in memory best
     N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
     print("N splits:", N_one_hour_splits)
@@ -340,16 +344,14 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
         heuristics_tests = False
         if heuristics_tests:
-            N_initial = len(filterd_final_score)
-            heuristic_inputs = []
-            #passed_heuristics = []
+            N_initial = len(filtered_final_score)
+            passed_heuristics = []
             gwak_filtered = extract(filtered_final_scaled_evals)
             for i, strain_segment in enumerate(timeslide_chunks):
                 strain_feats = parse_strain(strain_segment)
                 together = np.concatenate([strain_feats, gwak_filtered[i]])
                 res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
                 passed_heuristics.append(res<0.46)
-
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
