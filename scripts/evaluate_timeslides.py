@@ -191,8 +191,6 @@ def main(args):
     #print(linear_weights.shape)
     linear_weights[:, -2] += linear_weights[:, -1]
     # removing pearson
-    
-
     linear_weights = linear_weights[:, :-1]
     norm_factors = norm_factors[:, :-1]
 
@@ -205,6 +203,8 @@ def main(args):
     initial_roll = 0
     while not_finished:
         data = np.load(args.data_path)
+        assert data.shape[0] == 2
+        if data.shape[1] < 1e5: return None
         if not torch.is_tensor(data):
             data = torch.from_numpy(data).to(DEVICE)
         data_reduction = 2

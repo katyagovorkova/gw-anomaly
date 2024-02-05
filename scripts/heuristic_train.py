@@ -7,6 +7,7 @@ import torch.optim as optim
 #from config import GPU_NAME
 GPU_NAME = "cuda:2"
 device = torch.device(GPU_NAME)
+
 class HeuristicModel(nn.Module):
     def __init__(self):
         super(HeuristicModel, self).__init__()
@@ -46,7 +47,7 @@ def extract(gwak_values):
     for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
         a, b = pair
         ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
-        ratio_b = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, a]) + 2)
+        ratio_b = (np.abs(gwak_values[:, b]) + 2) / (np.abs(gwak_values[:, a]) + 2)
 
         ratio = np.maximum(ratio_a, ratio_b)
         result[:, i] = ratio
@@ -84,10 +85,14 @@ for elem in os.listdir(data_path):
             signal_data[class_name][0] = data
 
 sig_data = []
+sig_keys = []
 for key in signal_data.keys():
     sig_data.append(np.concatenate(signal_data[key],axis=1))
+    sig_keys.append(len(signal_data[key][0]) * [key])
+
 sig_data = np.concatenate(sig_data, axis=0)
 bkg_data = np.concatenate(bkg_data,axis=1)
+sig_keys = np.concatenate(sig_keys, axis=0)
 
 bkg_REAL = np.load(f'{data_path}/real_bkg_data.npy')
 bkg_data = bkg_REAL[:, :-1]
@@ -104,16 +109,13 @@ def bkg_loss_function(evals, fm_weights, scale=40):
     #print( (1 - torch.sigmoid(scale * (evals-0.5))).shape, fm_weights.shape)
     return torch.mean( (1 - torch.sigmoid(scale * (evals-0.5))) *fm_weights)
 
-#def bkg_loss_function(evals, fm_weights, scale=40):
-#    #print( (1 - torch.sigmoid(scale * (evals-0.5))).shape, fm_weights.shape)
-#    return torch.mean( (1 - torch.sigmoid(scale * (evals-0.5))))# *fm_weights)
-
 # training
 
 p1 = np.random.permutation(len(sig_data))
 p2 = np.random.permutation(len(bkg_data))
 
 sig_data = torch.from_numpy(sig_data[p1]).float().to(device)
+sig_keys = sig_keys[p1]
 bkg_data = torch.from_numpy(bkg_data[p2]).float().to(device)
 mult = np.mean(bkg_metric_score)
 orig = np.copy(bkg_metric_score[p2])
@@ -128,7 +130,7 @@ sig_data = sig_data[:sig_val_cut]
 bkg_data = bkg_data[:bkg_val_cut]
 print("train", sig_data.shape, bkg_data.shape, "val", sig_data_val.shape, bkg_data_val.shape)
 
-saved_model = False
+saved_model = True
 #model = HeuristicModel().to(device)
 model = BasedModel().to(device)
 model_save_path = "output/plots/model.h5"
@@ -231,7 +233,7 @@ if 0:
 
     print(f"train acc: bkg {train_bkg_acc:.3f} signal {train_sig_acc:.3f}, val acc: bkg {val_bkg_acc:.3f} signal {val_sig_acc:.3f} ")
 
-def make_roc_curve(bkg_evals, sig_evals):
+def make_roc_curve(bkg_evals, sig_evals, return_data=False):
     points = []
     for thresh in np.linspace(0, 1.01, 100):
         points.append([(bkg_evals < thresh).sum()/len(bkg_evals),
@@ -240,8 +242,9 @@ def make_roc_curve(bkg_evals, sig_evals):
     #for thresh in [0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55]:
     #    points2.append([(bkg_evals < thresh).sum()/len(bkg_evals),
     #                   (sig_evals < thresh).sum()/len(sig_evals) ])
-        
     points = np.array(points)
+    if return_data:
+        return points
     plt.plot(points[:, 0], points[:, 1])
     plt.xlabel("FPR")
     plt.ylabel("TPR")
@@ -280,7 +283,7 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
             #if i > 50:
             #    assert 0
             counts[k] += 1
-            if model_pred[i] < 0.47:
+            if model_pred[i] < 0.5:
                 post_heur_counts[k] += 1
 
         #print(counts)
@@ -303,10 +306,54 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
 #assert 0
 #plt.scatter(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:])
 #plt.savefig(f"output/plots/scatterman.png", dpi=300)
+if saved_model:
+    bkg_eval = np.load("output/plots/bkg_eval.npy")
+    sig_eval = np.load("output/plots/sig_eval.npy")
+    sig_keys = np.load("output/plots/sig_tags.npy")[sig_val_cut:]
+    orig = np.load("output/plots/metric_scores.npy")
+else:
+    np.save("output/plots/bkg_eval.npy", model(bkg_data_val).detach().cpu().numpy())
+    np.save("output/plots/sig_eval.npy", model(sig_data_val).detach().cpu().numpy())
+    np.save("output/plots/sig_tags.npy", sig_keys)
+    np.save("output/plots/metric_scores.npy", orig)
+    bkg_eval = model(bkg_data_val).detach().cpu().numpy()
+    sig_eval = model(sig_data_val).detach().cpu().numpy()
+    sig_keys = sig_keys
+    
+if 1:
+    make_roc_curve(bkg_eval, sig_eval)
+    heuristic_cut_performance_plot(bkg_eval, orig[bkg_val_cut:], "bkg")
+    heuristic_cut_performance_plot(model(sig_data_val).detach().cpu().numpy(), orig[bkg_val_cut:], "sig")
 
-make_roc_curve(model(bkg_data_val).detach().cpu().numpy(), model(sig_data_val).detach().cpu().numpy())
-heuristic_cut_performance_plot(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:], "bkg")
-heuristic_cut_performance_plot(model(sig_data_val).detach().cpu().numpy(), orig[bkg_val_cut:], "sig")
+# do the plots of signal efficiency
+tag_types = set(sig_keys)
+tag_ordered = []
+roc_data = []
+for tag in tag_types:
+    tag_ordered.append(tag)
+    sig_locs = np.where(sig_keys == tag)[0]
+    roc_data.append(make_roc_curve(bkg_eval, sig_eval[sig_locs], return_data=True))
+
+fig, axs = plt.subplots(3, 2, figsize=(15, 10))
+for i in range(6):
+    axs[i%3, i//3].plot(roc_data[i][:, 0], roc_data[i][:, 1])
+    axs[i%3, i//3].scatter(roc_data[i][49, 0], roc_data[i][49, 1], c="black", label = "cutoff=0.5")
+    axs[i%3, i//3].set_title(tag_ordered[i])
+    axs[i%3, i//3].grid()
+    axs[i%3, i//3].set_xscale("log")
+    axs[i%3, i//3].set_xlim(1e-5, 1e-2)
+    axs[i%3, i//3].set_ylim(0.8, 1.01)
+    
+    #if i == 0:
+    axs[i%3, i//3].legend()
+    if i//3 == 0:
+        axs[i%3, i//3].set_ylabel("TPR")
+    if i % 3 == 2:
+        axs[i%3, i//3].set_xlabel("FPR")
+
+fig.savefig(f"output/plots/signal_cut_effic.png", dpi=300)
+plt.close()
+
 if 0:
     print(model.layer1.weight)
     print(model.layer1.bias)
