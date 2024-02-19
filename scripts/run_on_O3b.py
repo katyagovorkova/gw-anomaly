@@ -11,6 +11,7 @@ import json
 import matplotlib
 from torch.nn.functional import conv1d
 from scipy.stats import pearsonr
+import pickle
 from config import (
     CHANNEL,
     GPU_NAME,
@@ -50,7 +51,6 @@ def extract(gwak_values):
 
         ratio = np.maximum(ratio_a, ratio_b)
         result[:, i] = ratio
-
     return result
 
 def compute_signal_strength_chop_sep(x, y):
@@ -103,32 +103,44 @@ def find_segment(gps, segs):
         a, b = seg
         if a < gps and b > gps:
             return seg
+
+def sig_prob_function(evals, scale=40):
+    sigmoid = lambda x: 1/(1+np.exp(-x))
+    return 1-(sigmoid(scale * (evals-0.5)))
         
-def make_metric_vs_far(savepath, bins_path=f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy"):
-    #far_bar = far_to_metric(3600*24*2, far_bins)
-    search_vals = np.logspace(-3, np.log10(100), 200) # in number per month
-    search_vals *= 30*24*3600
+def get_far(score, sort_eval):
+    ind = np.searchsorted(sort_eval, score)
+    if ind == len(sort_eval):
+        ind -= 1
+    #N = len(sort_eval)
+    units = 10000*3.15e7
+    return ind/units
 
-    metric_vals = []
-    far_bins = np.load(bins_path)
-    for elem in search_vals:
-        metric_vals.append(far_to_metric(elem, far_bins))
+# def make_metric_vs_far(savepath, bins_path=f"/home/katya.govorkova/gwak-paper-final-models/far_bins_50.npy"):
+#     #far_bar = far_to_metric(3600*24*2, far_bins)
+#     search_vals = np.logspace(-3, np.log10(100), 200) # in number per month
+#     search_vals *= 30*24*3600
+
+#     metric_vals = []
+#     far_bins = np.load(bins_path)
+#     for elem in search_vals:
+#         metric_vals.append(far_to_metric(elem, far_bins))
 
 
 
-    #plt.plot(search_vals/(30*24*3600), metric_vals)
-    plt.xscale("log")
-    plt.plot(1/search_vals, metric_vals)
+#     #plt.plot(search_vals/(30*24*3600), metric_vals)
+#     plt.xscale("log")
+#     plt.plot(1/search_vals, metric_vals)
 
-    vbars = [3600, 24*3600, 7*24*3600, 30*24*3600]
-    labels = ["hour", "day", "week", "month"]
-    for i, val in enumerate(vbars):
-        plt.axvline(x=1/val, label=labels[i], alpha=0.9**(len(labels)-i), c="black")
-    plt.legend()
-    plt.xlabel("FAR, Hz")
-    plt.ylabel("corresponding metric values")
-    plt.savefig(f"{savepath}/FAR_vs_metric.pdf", dpi=300)
-    return 1/search_vals, metric_vals
+#     vbars = [3600, 24*3600, 7*24*3600, 30*24*3600]
+#     labels = ["hour", "day", "week", "month"]
+#     for i, val in enumerate(vbars):
+#         plt.axvline(x=1/val, label=labels[i], alpha=0.9**(len(labels)-i), c="black")
+#     plt.legend()
+#     plt.xlabel("FAR, Hz")
+#     plt.ylabel("corresponding metric values")
+#     plt.savefig(f"{savepath}/FAR_vs_metric.pdf", dpi=300)
+#     return 1/search_vals, metric_vals
 
 def make_eval_chunks(a, b, dur):
     '''
@@ -179,7 +191,7 @@ def event_clustering(indices, scores, spacing, device):
         final_points.append(bestval)
     return torch.from_numpy(np.array(final_points)).int().to(device)
 
-def extract_chunks(strain_data, timeslide_num, important_points, device, 
+def extract_chunks(strain_data, timeslide_num, important_points, device,
                     roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
     '''
     Important points are indicies into thestrain_data
@@ -219,8 +231,17 @@ def whiten_bandpass_resample(
 
     # Load LIGO data
     try:
-        strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-        strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
+
+        #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
+        #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
+        # Save with pickle
+
+        #open the pickle files    
+        with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
+            strainL1 = pickle.load(f)
+
+        with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/H1_{start_point}_{end_point}.pkl", 'rb') as f:
+            strainH1 = pickle.load(f)
 
     except:
         print(f'Couldnt load {start_point}, {end_point}')
@@ -244,38 +265,27 @@ def whiten_bandpass_resample(
 
     return [strainH1, strainL1]
 
-def extract(gwak_values):
-    result = np.zeros((gwak_values.shape[0], 3))
-    for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
-        a, b = pair
-        ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
-        ratio_b = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, a]) + 2)
-
-        ratio = np.maximum(ratio_a, ratio_b)
-        result[:, i] = ratio
-
-    return result
-
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
-    model_path = '/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5'
+    model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path))
 
     # split the data into 1-hour chunks to fit in memory best
-    N_one_hour_splits = data_.shape[1]//(3600*SAMPLE_RATE) + 1
+    eval_at_once_len = int(3600)
+    N_one_hour_splits = int(data_.shape[1]//(eval_at_once_len*SAMPLE_RATE) + 1)
     print("N splits:", N_one_hour_splits)
     for hour_split in range(N_one_hour_splits):
-        start = int(hour_split*SAMPLE_RATE*3600)
-        end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*3600))
-
+        start = int(hour_split*SAMPLE_RATE*eval_at_once_len)
+        end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*eval_at_once_len))
+        print(start, end)
         data = data_[:, start:end]
 
         #DEVICE = torch.device(f'cuda:{args.gpu}')
-        model_path = ["output/O3av2/trained/models/bbh.pt",
-                    "output/O3av2/trained/models/sglf.pt",
-                    "output/O3av2/trained/models/sghf.pt",
-                    "output/O3av2/trained/models/background.pt",
-                        "output/O3av2/trained/models/glitches.pt"]
+        model_path = ["/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/bbh.pt",
+                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sglf.pt",
+                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sghf.pt",
+                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/background.pt",
+                        "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/glitches.pt"]
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         orig_kernel = 50
@@ -283,12 +293,12 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
         kernel = kernel[None, :, :]
         heuristics_tests = True
-        if heuristics_tests:
-            long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
-            short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
-        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+        #if heuristics_tests:
+            #long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+            #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
+        norm_factors = np.load(f"/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = ("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -309,7 +319,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         final_values = final_values[0]
 
         # Set the threshold here
-        FAR_2days = 0.5 # lowest FAR bin we want to worry about
+        FAR_2days = -1 # lowest FAR bin we want to worry about
 
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
@@ -322,7 +332,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
         indices = torch.where(smoothed_scores < FAR_2days)[0]
 
-        if len(indices) == 0: return None  # Didn't find anything
+        if len(indices) == 0: continue # Didn't find anything
 
         indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
         filtered_final_score = smoothed_scores.index_select(0, indices)
@@ -342,7 +352,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         indices = indices[edge_check_filter]
         filtered_timeslide_chunks = timeslide_chunks
 
-        heuristics_tests = False
+        heuristics_tests = True
         if heuristics_tests:
             N_initial = len(filtered_final_score)
             passed_heuristics = []
@@ -351,7 +361,16 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 strain_feats = parse_strain(strain_segment)
                 together = np.concatenate([strain_feats, gwak_filtered[i]])
                 res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
-                passed_heuristics.append(res<0.46)
+                #passed_heuristics.append(res<0.46)
+
+                res_sigmoid = sig_prob_function(res)
+                print(res, res_sigmoid, filtered_final_score[i])
+                final_final = res_sigmoid * filtered_final_score[i]
+                print(res, res_sigmoid, filtered_final_score[i])
+                filtered_final_score[i] *= res_sigmoid
+                print(res, res_sigmoid, filtered_final_score[i])
+                passed_heuristics.append(final_final[0] < -1) #[0] since it was saving arrays(arrays)
+                
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
@@ -364,7 +383,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         fm_scores = filtered_final_score
         strain_chunks = filtered_timeslide_chunks
 
-        if strain_chunks.shape[0] == 0: return None
+        if strain_chunks.shape[0] == 0: continue
         # plotting all these significant events
         n_points = strain_chunks.shape[2]
 
@@ -406,7 +425,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             axs[0, 0].set_xlabel('Time, (ms)')
             axs[0, 0].set_ylabel('strain')
             axs[0, 0].legend()
-            axs[0, 0].set_title(f'gps time: {start_point} + {midpoints[loudest]/SAMPLE_RATE + hour_split*3600:.3f}')
+            axs[0, 0].set_title(f'gps time: {start_point} + {midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len:.3f}')
             p = midpoints[loudest]
             do_q_scan = True
             if do_q_scan:
@@ -414,8 +433,8 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 left_edge = 1024
                 right_edge = 1024
                 q_edge = int(7.5*4096)
-                H_strain = gwpy_timeseries[0][p-left_edge-q_edge + 3600*hour_split*SAMPLE_RATE:p+right_edge+q_edge + 3600*hour_split*SAMPLE_RATE]
-                L_strain = gwpy_timeseries[1][p-left_edge-q_edge + 3600*hour_split*SAMPLE_RATE:p+right_edge+q_edge + 3600*hour_split*SAMPLE_RATE]
+                H_strain = gwpy_timeseries[0][p-left_edge-q_edge + eval_at_once_len*hour_split*SAMPLE_RATE:p+right_edge+q_edge + eval_at_once_len*hour_split*SAMPLE_RATE]
+                L_strain = gwpy_timeseries[1][p-left_edge-q_edge + eval_at_once_len*hour_split*SAMPLE_RATE:p+right_edge+q_edge + eval_at_once_len*hour_split*SAMPLE_RATE]
                 t0 = H_strain.t0.value
                 dt = H_strain.dt.value
 
@@ -440,7 +459,8 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 axs[1, 1].set_ylabel("Freq (Hz)")
                 axs[1, 1].set_title("Livingston Q-Transform")
 
-            best_far = "NOFAR"
+            FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
+            best_far = get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             print("best_score", best_score)
             plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.png', dpi=300, bbox_inches="tight")
@@ -451,17 +471,18 @@ def main(args):
         os.makedirs(args.savedir)
     except FileExistsError:
         None
-    gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv",
+    gwtc_events=parse_gwtc_catalog("/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/gwtc.csv",
                                   1238166018, 1253977218)
 
-    valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
-    trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
+    valid_segments = np.load("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/O3a_intersections.npy")
+    trained_path = "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/" # fix hardcoding later
 
-    run_short_test = True
+    run_short_test = False
     if run_short_test:
         # testing code
         print("valid segments", valid_segments)
         A = 1243303084
+        #A = 1243305672.9
         #A = 1251008449
         #A = 1242440636
         #A = 1240316625
@@ -480,10 +501,14 @@ def main(args):
         done_segments = np.load(f_segments)
         if A in done_segments and B in done_segments: continue
         if B - A >= 1800:
+            #A = 1243303084 - 3600
+            #B = A + 3600 + 3600 + 3600
             print("Working on", A, B)
             H, L = whiten_bandpass_resample(A, B)
             if H is None and L is None: continue
             data = np.vstack([np.array(H.data), np.array(L.data)])
+            print(data.shape)
+            if data.shape[-1] < 1e5: return None
             get_evals(data, trained_path, args.savedir, int(A), [H, L])
             np.save(f_segments, np.concatenate((done_segments, [A], [B])))
 
