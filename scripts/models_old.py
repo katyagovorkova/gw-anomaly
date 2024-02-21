@@ -46,16 +46,26 @@ class Encoder(nn.Module):
       num_layers=1,
       batch_first=True
     )
+    self.linear0 = nn.Linear(in_features=self.embedding_dim*seq_len, out_features=self.hidden_dim*10)
+    self.linear1 = nn.Linear(in_features=self.hidden_dim*10, out_features=self.hidden_dim*5)
+    self.linear2 = nn.Linear(in_features=self.hidden_dim*5, out_features=self.hidden_dim*2)
+    self.linear3 = nn.Linear(in_features=self.hidden_dim*2, out_features=self.embedding_dim)
+
   def forward(self, x):
     batch_size = x.shape[0]
     #x = x.reshape((batch_size, self.seq_len, self.n_features))
     x, (_, _) = self.rnn1(x)
-    x, (hidden_n, _) = self.rnn2(x)
-    return hidden_n.reshape((batch_size, self.embedding_dim))
+    x, (hidden_n, cell_n) = self.rnn2(x)
+    x = self.linear0(x.reshape(batch_size, -1))
+    x = self.linear1(x)
+    x = self.linear2(x)
+    x = self.linear3(x)
+    #return hidden_n.reshape((batch_size, self.embedding_dim)) #traditional way
+    return x.reshape((batch_size, self.embedding_dim)) #phil harris way
   
-class Decoder(nn.Module):
+class Decoder_symm(nn.Module):
   def __init__(self, seq_len, n_features=1, input_dim=64,):
-    super(Decoder, self).__init__()
+    super(Decoder_symm, self).__init__()
     self.seq_len, self.input_dim = seq_len, input_dim
     self.hidden_dim, self.n_features = 2 * input_dim, n_features
     self.rnn1 = nn.LSTM(
@@ -70,11 +80,58 @@ class Decoder(nn.Module):
       num_layers=1,
       batch_first=True
     )
+
+    self.linear0 = nn.Linear(in_features=self.input_dim, out_features=self.hidden_dim*2)
+    self.linear1 = nn.Linear(in_features=self.hidden_dim*2, out_features=self.hidden_dim*5)
+    self.linear2 = nn.Linear(in_features=self.hidden_dim*5, out_features=self.hidden_dim*10)
+    self.linear3 = nn.Linear(in_features=self.hidden_dim*10, out_features=self.input_dim*seq_len)
+
     self.output_layer = nn.Linear(self.hidden_dim, n_features)
   def forward(self, x):
     batch_size = x.shape[0]
+    #print("x.shape", x.shape)
+    #x = x.unsqueeze(1)
+    #print("unsqueezes.shape", x.shape)
+    #x = x.repeat(1, self.seq_len, 1)
+    #print("repeats.shape", x.shape)
+    x = self.linear0(x)
+    x = self.linear1(x)
+    x = self.linear2(x)
+    x = self.linear3(x)
+    x = x.reshape((batch_size, self.seq_len, self.input_dim))
+    x, (hidden_n, cell_n) = self.rnn1(x)
+    x, (hidden_n, cell_n) = self.rnn2(x)
+    #x = x.reshape((batch_size, self.seq_len, self.hidden_dim))
+    return self.output_layer(x)
+  
+  
+class Decoder_asymm(nn.Module):
+  def __init__(self, seq_len, n_features=1, input_dim=64,):
+    super(Decoder_asymm, self).__init__()
+    self.seq_len, self.input_dim = seq_len, input_dim
+    self.hidden_dim, self.n_features = 2 * input_dim, n_features
+    self.rnn1 = nn.LSTM(
+      input_size=input_dim,
+      hidden_size=input_dim,
+      num_layers=1,
+      batch_first=True
+    )
+    self.rnn2 = nn.LSTM(
+      input_size=input_dim,
+      hidden_size=self.hidden_dim,
+      num_layers=1,
+      batch_first=True
+    )
+    
+    self.output_layer = nn.Linear(self.hidden_dim, n_features)
+  def forward(self, x):
+    batch_size = x.shape[0]
+    print("x.shape", x.shape)
     x = x.unsqueeze(1)
+    print("unsqueezes.shape", x.shape)
     x = x.repeat(1, self.seq_len, 1)
+    print("repeats.shape", x.shape)
+
     x, (hidden_n, cell_n) = self.rnn1(x)
     x, (hidden_n, cell_n) = self.rnn2(x)
     #x = x.reshape((batch_size, self.seq_len, self.hidden_dim))
@@ -90,10 +147,10 @@ class LSTM_AE(nn.Module):
     self.num_timesteps = num_timesteps
     self.num_ifos = num_ifos
     self.BOTTLENECK = BOTTLENECK
-    #self.encoder = Encoder(seq_len=num_timesteps, n_features=num_ifos, embedding_dim=BOTTLENECK)
-    #self.decoder = Decoder(seq_len=num_timesteps, n_features=num_ifos, input_dim=BOTTLENECK)
-    self.encoder = Encoder(seq_len=num_ifos, n_features=num_timesteps, embedding_dim=BOTTLENECK)
-    self.decoder = Decoder(seq_len=num_ifos, n_features=num_timesteps, input_dim=BOTTLENECK)
+    self.encoder = Encoder(seq_len=num_timesteps, n_features=num_ifos, embedding_dim=BOTTLENECK)
+    self.decoder = Decoder_symm(seq_len=num_timesteps, n_features=num_ifos, input_dim=BOTTLENECK)
+    #self.encoder = Encoder(seq_len=num_ifos, n_features=num_timesteps, embedding_dim=BOTTLENECK)
+    #self.decoder = Decoder(seq_len=num_ifos, n_features=num_timesteps, input_dim=BOTTLENECK)
   def forward(self, x):
     x = self.encoder(x)
     x = self.decoder(x)
@@ -121,7 +178,7 @@ class TransformerAutoencoder(nn.Module):
         self.fc = nn.Linear(input_dim, input_dim)
 
     def forward(self, x):
-        x = torchtranspose(x, 1, 2)
+        #x = torchtranspose(x, 1, 2)
         batch_size, seq_len, _ = x.size()
         # Encoder
         encoding = self.encoder(x.transpose(0, 1))
@@ -133,5 +190,6 @@ class TransformerAutoencoder(nn.Module):
         output = self.fc(decoding).view(batch_size, seq_len, -1)
         #output = torchtranspose(decoding, 1, 2)
         #print(output.view(batch_size, seq_len, -1).shape)
-        return torchtranspose(output, 1, 2)
+        #return torchtranspose(output, 1, 2)
+        return output
   

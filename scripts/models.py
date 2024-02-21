@@ -222,7 +222,7 @@ class TranAD(nn.Module):
 		super(TranAD, self).__init__()
 		self.name = 'TranAD'
 		self.lr = 0.001
-		self.batch = 128
+		self.batch = 100
 		self.n_feats = feats
 		self.n_window = 100
 		self.n = self.n_feats * self.n_window
@@ -243,14 +243,11 @@ class TranAD(nn.Module):
 		tgt = tgt.repeat(1, 1, 2)
 		return tgt, memory
 
-	def forward(self, src):
-
-		tgt = torch.clone(src)
+	def forward(self, src, tgt):
 		# Phase 1 - Without anomaly scores
 		c = torch.zeros_like(src)
 		x1 = self.fcn(self.transformer_decoder1(*self.encode(src, c, tgt)))
 		# Phase 2 - With anomaly scores
 		c = (x1 - src) ** 2
 		x2 = self.fcn(self.transformer_decoder2(*self.encode(src, c, tgt)))
-		
-		return x2
+		return x1, x2
