@@ -233,41 +233,48 @@ def whiten_bandpass_resample(
     # Load LIGO data
     #try:
     # Load LIGO data
-    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
+    try:
+        start_point, end_point = int(start_point)+10, int(end_point)-10
+        strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
+        strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
+        #else:
+        #    strainL1 = TimeSeries.fetch(f'L1:{CHANNEL}', start_point, end_point)
+        #    strainH1 = TimeSeries.fetch(f'H1:{CHANNEL}', start_point, end_point)
+            
+        #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
+        #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
+            # Save with pickle
 
-    #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
-    #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
-        # Save with pickle
+            #open the pickle files    
+            #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
+            #    strainL1 = pickle.load(f)
+            #
+            #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/H1_{start_point}_{end_point}.pkl", 'rb') as f:
+            #    strainH1 = pickle.load(f)
 
-        #open the pickle files    
-        #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
-        #    strainL1 = pickle.load(f)
-        #
-        #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/H1_{start_point}_{end_point}.pkl", 'rb') as f:
-        #    strainH1 = pickle.load(f)
+        #except:
+        #    print(f'Couldnt load {start_point}, {end_point}')
+        #    print('SKIPPING')
+        #    return None, None
 
-    #except:
-    #    print(f'Couldnt load {start_point}, {end_point}')
-    #    print('SKIPPING')
-    #    return None, None
+        t0 = int(strainL1.t0 / u.s)
 
-    t0 = int(strainL1.t0 / u.s)
+    # if shift != None:
+    #     shift_datapoints = shift * sample_rate
+    #     temp = strainL1[-shift_datapoints:]
+    #     strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
+    #     strainL1[:shift_datapoints] = temp
 
-   # if shift != None:
-   #     shift_datapoints = shift * sample_rate
-   #     temp = strainL1[-shift_datapoints:]
-   #     strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
-   #     strainL1[:shift_datapoints] = temp
+        # Whiten, bandpass, and resample
+        strainL1 = strainL1.resample(sample_rate)
+        strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
 
-    # Whiten, bandpass, and resample
-    strainL1 = strainL1.resample(sample_rate)
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
+        strainH1 = strainH1.resample(sample_rate)
+        strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
 
-    strainH1 = strainH1.resample(sample_rate)
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-
-    return [strainH1, strainL1]
+        return [strainH1, strainL1]
+    except:
+        return None, None
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
     #model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
@@ -491,44 +498,45 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
             # indexing into midpoints with loudest should carry over to original and recreated - if just taking the strongst point to recreate
             #p = midpoints[loudest]
-            fig, axs = plt.subplots(5, 2, figsize=(10, 13))
+            if 0:
+                fig, axs = plt.subplots(5, 2, figsize=(10, 13))
 
-            print(494, original['bbh'].shape)
-            for n, class_name in enumerate(CLASS_ORDER):
+                print(494, original['bbh'].shape)
+                for n, class_name in enumerate(CLASS_ORDER):
+                    
+                    #i, j = n // 2, n % 2 
+                    i=n
+                    detecs = {0:"_hanford", 1:"_livingston"}
+                    for j in range(2):
+                        axs[i, j].plot(original[class_name][loudest][j], label = f'input_{class_name}')
+                        axs[i, j].plot(recreated[class_name][loudest][j], label = f'recreated_{class_name}')
+                        #axs[i, j].set_title(class_name + detecs[j])
+                        axs[i, j].legend()
+
+                axs[0, 0].set_title("hanford")
+                axs[0, 1].set_title("livingston")
+                #print("best_score", best_score)
+                plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_RECREATIONS.png', dpi=300, bbox_inches='tight')
+                plt.close()
                 
-                #i, j = n // 2, n % 2 
-                i=n
-                detecs = {0:"_hanford", 1:"_livingston"}
-                for j in range(2):
-                    axs[i, j].plot(original[class_name][loudest][j], label = f'input_{class_name}')
-                    axs[i, j].plot(recreated[class_name][loudest][j], label = f'recreated_{class_name}')
-                    #axs[i, j].set_title(class_name + detecs[j])
-                    axs[i, j].legend()
+                print(514, scaled_evals[loudest])
+                fig, axs = plt.subplots(10, 2, figsize=(10, 26))
+                for w in range(-5, 5):
+                    best_channel = "bbh"
+                    offset = 5
+                    axs[w+offset, 0].plot(original[best_channel][loudest+w][0], label = "original")
+                    axs[w+offset, 0].plot(recreated[best_channel][loudest+w][0], label = "recreated")
+                    axs[w+offset, 0].legend()
 
-            axs[0, 0].set_title("hanford")
-            axs[0, 1].set_title("livingston")
-            #print("best_score", best_score)
-            plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_RECREATIONS.png', dpi=300, bbox_inches='tight')
-            plt.close()
-            
-            print(514, scaled_evals[loudest])
-            fig, axs = plt.subplots(10, 2, figsize=(10, 26))
-            for w in range(-5, 5):
-                best_channel = "bbh"
-                offset = 5
-                axs[w+offset, 0].plot(original[best_channel][loudest+w][0], label = "original")
-                axs[w+offset, 0].plot(recreated[best_channel][loudest+w][0], label = "recreated")
-                axs[w+offset, 0].legend()
+                    axs[w+offset, 1].plot(original[best_channel][loudest+w][1], label = "original")
+                    axs[w+offset, 1].plot(recreated[best_channel][loudest+w][1], label = "recreated")
+                    axs[w+offset, 1].legend()
 
-                axs[w+offset, 1].plot(original[best_channel][loudest+w][1], label = "original")
-                axs[w+offset, 1].plot(recreated[best_channel][loudest+w][1], label = "recreated")
-                axs[w+offset, 1].legend()
+                    axs[0, 0].set_title("Hanford")
+                    axs[0, 1].set_title("Livingston")
 
-                axs[0, 0].set_title("Hanford")
-                axs[0, 1].set_title("Livingston")
-
-            plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_PRODECURAL_RECREATIONS.png', dpi=300, bbox_inches='tight')
-            plt.close()
+                plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_PRODECURAL_RECREATIONS.png', dpi=300, bbox_inches='tight')
+                plt.close()
 
 
 def main(args):
@@ -540,19 +548,41 @@ def main(args):
     #                              1238166018, 1253977218)
 
     #valid_segments = np.load("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/O3a_intersections.npy")
-    #valid_segments = np.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/O3a_intersections.npy")
+    valid_segments = np.load("/home/katya.govorkova/gw-anomaly/output/O3a_intersections.npy")
     #trained_path = "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/" # fix hardcoding later
     trained_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/gwak-paper-final-models/"
-    run_short_test = True
+    run_short_test = False
     if run_short_test:
         # testing code
         #print("valid segments", valid_segments)
-        A = 1243303084
+        #A = 1243303084
+        #A = 1240700690
+        #A = 1244936268
+        A = 1245155831
+        A = 1242437036 + 5000
+        A = 1246261450
+        A = 1246453144+33000
+        A = 1240872261+5000
+        #A = 1240700690
+        print(np.where(valid_segments==A))
+        A, B = (valid_segments[143])
+        #assert 0
+        #print(562, A, B)
+       # B-= 1000
+        #A += 1000
+        #B = A + 10000
+       # B = A + 3600
+
+        
         #A = 1243305672.9
         #A = 1251008449
         #A = 1242440636
         #A = 1240316625
-        B = A + 3600#*3//2
+        #B = A + 3600#*3//2
+        A = 1240700690.0
+        B = 1240735662.0
+        A = B-3600
+
         H, L = whiten_bandpass_resample(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
 
@@ -563,10 +593,16 @@ def main(args):
     if not os.path.exists(f_segments):
         np.save(f_segments, np.array([0]))
 
-    for A, B in valid_segments:
+    for a, b in valid_segments:
         done_segments = np.load(f_segments)
-        if A in done_segments and B in done_segments: continue
-        if B - A >= 1800:
+        As = np.arange(a, b, 3600)
+        for A in As:
+            B = A + 3600
+            if B > b: continue
+            if A in done_segments and B in done_segments: 
+                print("already finished,", A, B)
+                continue
+            #if B - A >= 1800:
             #A = 1243303084 - 3600
             #B = A + 3600 + 3600 + 3600
             print("Working on", A, B)
