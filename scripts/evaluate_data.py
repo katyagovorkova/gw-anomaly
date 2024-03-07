@@ -51,6 +51,39 @@ def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
         
     return minval, shift_idx
 
+import torch.nn as nn
+class BasedModel(nn.Module):
+    def __init__(self):
+        super(BasedModel, self).__init__()
+
+        self.layer1 = nn.Linear(3, 1)
+        self.layer2_1 = nn.Linear(1, 1)
+        self.layer2_2 = nn.Linear(1, 1)
+        self.layer2_3 = nn.Linear(1, 1)
+        
+        self.activation = nn.Sigmoid()
+
+    def forward(self, x):
+        x1 = self.activation(self.layer1(x[:, :3]))
+        x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
+        x2_2 = self.activation(self.layer2_1(x[:, 4:5]))
+        x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
+        return x1 * x2_1 * x2_2 * x2_3
+
+def extract(gwak_values):
+    print(74, "in", gwak_values.shape)
+    result = np.zeros((gwak_values.shape[0], 3))
+    for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
+        a, b = pair
+        ratio_a = (np.abs(gwak_values[:, a]) + 2) / (np.abs(gwak_values[:, b]) + 2)
+        ratio_b = (np.abs(gwak_values[:, b]) + 2) / (np.abs(gwak_values[:, a]) + 2)
+
+        ratio = np.maximum(ratio_a, ratio_b)
+        print(81, ratio.shape)
+        result[:, i] = ratio
+
+    return result
+
 
 def parse_strain(x):
     # take strain, compute the long sig strenght & pearson
@@ -62,7 +95,8 @@ def parse_strain(x):
     
 def full_evaluation(data, model_folder_path, device, return_midpoints=False,
                     loaded_models=None, selection=None, grad_flag=True,
-                    already_split=False, precomputed_rnn=None, batch_size=None, do_rnn_precomp=False):
+                    already_split=False, precomputed_rnn=None, batch_size=None, 
+                    do_rnn_precomp=False, return_recreations=False):
     '''
     Passed in data is of shape (N_samples, 2, time_axis)
     '''
@@ -101,15 +135,22 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
     #t61 = time.time()
     quak_predictions_dict = quak_eval(
         segments_normalized, model_folder_path, device, loaded_models=loaded_models,
-        grad_flag = grad_flag, precomputed_rnn=precomputed_rnn, batch_size=batch_size, do_rnn_precomp=do_rnn_precomp)
+        grad_flag = grad_flag, precomputed_rnn=precomputed_rnn, batch_size=batch_size, 
+        do_rnn_precomp=do_rnn_precomp, reduce_loss= not(return_recreations) )
     if do_rnn_precomp:
         return quak_predictions_dict
 
     #print("quak eval time", time.time()-t61, quak_predictions_dict[list(quak_predictions_dict.keys())[0]][0][0])
     #t65 = time.time()
-
-    quak_predictions = stack_dict_into_tensor(
-        quak_predictions_dict, device=device)
+    if return_recreations:
+        quak_predictions = stack_dict_into_tensor(
+            quak_predictions_dict['freq_loss'], device=device)
+        originals = quak_predictions_dict['original']
+        recreations = quak_predictions_dict['recreated']
+        
+    else:
+        quak_predictions = stack_dict_into_tensor(
+            quak_predictions_dict, device=device)
     #print("stacking time,", time.time()-t65)
 
     if RETURN_INDIV_LOSSES:
@@ -142,7 +183,8 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
             final_values = torch.cat([quak_predictions, pearson_values], dim=-1)
 
         return final_values, slice_midpoints
-
+    if return_recreations:
+        return quak_predictions, slice_midpoints, originals, recreations
     return quak_predictions, slice_midpoints
 
 
@@ -172,6 +214,11 @@ def main(args):
             data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE)#[0].cpu().numpy()
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = output.cpu().numpy()
     np.save(args.save_path, result)
+
+    model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
+    model_heuristic = BasedModel().to(DEVICE)
+    model_heuristic.load_state_dict(torch.load(model_path))
+    
     if DATA_EVAL_USE_HEURISTIC:
         # need to get the point of highest score
         
@@ -193,12 +240,15 @@ def main(args):
         scores = scores.detach().cpu().numpy()
         strongest = np.argmin(scores, axis=1)
         scaled_evals = scaled_evals.detach().cpu().numpy()
-        long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
-        short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
+        #long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
+        #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         passed = []
-        build_dataset_strain = []
+        #build_dataset_strain = []
+        build_heur_model_evals = []
         build_data_gwak_features = []
+        SNRs__ = []
         print("201", scaled_evals.shape)
+        #gwak_filtered = extract(scaled_evals)
         for i in range(len(data)):
             #strain_center = midpoints[strongest[i]]
             #print(midpoints[strongest[i]], strongest[i])
@@ -213,17 +263,19 @@ def main(args):
             elif args.save_path[:-4].split("/")[-1] == "supernova_varying_snr_evals":
                 strain_center = 10850
                 eval_strongest_loc = 218
-            if 0:
-                passed.append(joint_heuristic_test(
-                                    data[i, :, strain_center-1024:strain_center+1024],
-                                    combine_freqcorr(scaled_evals[i])[eval_strongest_loc],
-                                    short_relation,
-                                    long_relation))
-            if SNRs[i] > 12:
-                seg = data[i, :, strain_center-1024:strain_center+1024]
-                pearson_, HSS, LSS = parse_strain(seg)
-                build_dataset_strain.append([pearson_, HSS, LSS])
-                build_data_gwak_features.append(scaled_evals[i][eval_strongest_loc])
+
+            gwak_filtered = extract(scaled_evals[:, eval_strongest_loc, :])
+
+            #if SNRs[i] > 12:
+            SNRs__.append(SNRs[i])
+            seg = data[i, :, strain_center-1024:strain_center+1024]
+            strain_feats = parse_strain(seg)
+            together = np.concatenate([strain_feats, gwak_filtered[i]])
+            heur_res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+            build_heur_model_evals.append(heur_res)
+            #gwak_filtered
+            #build_dataset_strain.append([pearson_, HSS, LSS])
+            build_data_gwak_features.append(scaled_evals[i][eval_strongest_loc])
             print(f"Computing heuristic test {i}/{len(data)}, SNR {SNRs[i]}" , end = '\r')
 
         # save the heuristic cut dataset
@@ -234,9 +286,11 @@ def main(args):
         except FileExistsError:
             None
         class_name = args.save_path.split("/")[-1].split("_")[0]
-        np.save(f"{heuristic_dir}/{class_name}_strain.npy", np.array(build_dataset_strain))
-        np.save(f"{heuristic_dir}/{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
-            
+        np.save(f"{heuristic_dir}/SIG_EVAL_{class_name}_heur_model_evals.npy", np.array(build_heur_model_evals))
+        np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
+        np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_SNRs.npy", np.array(SNRs__))
+
+        print("heuristic dir", heuristic_dir)
         #passed = np.array(passed)
         #print("177", passed.sum())
 

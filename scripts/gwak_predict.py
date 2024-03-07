@@ -28,7 +28,7 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None, gr
         loss['recreated'] = dict()
         loss['loss'] = dict()
         loss['freq_loss'] = dict()
-
+    
     for dpath in model_path:
         #if os.path.basename(dpath)[:-3] != "bbh": continue
         #print("34", )
@@ -114,10 +114,14 @@ def quak_eval(data, model_path, device, reduce_loss=True, loaded_models=None, gr
                     freq_loss_torch(data, model(data).detach())
 
 
+            #loss['original'][os.path.basename(
+            #    dpath)[:-3]] = data[:RECREATION_LIMIT].cpu().numpy()
+            #loss['recreated'][os.path.basename(
+            #    dpath)[:-3]] = model(data[:RECREATION_LIMIT]).detach().cpu().numpy()
             loss['original'][os.path.basename(
-                dpath)[:-3]] = data[:RECREATION_LIMIT].cpu().numpy()
+                dpath)[:-3]] = data.cpu().numpy()
             loss['recreated'][os.path.basename(
-                dpath)[:-3]] = model(data[:RECREATION_LIMIT]).detach().cpu().numpy()
+                dpath)[:-3]] = model(data).detach().cpu().numpy()
 
     return loss
 

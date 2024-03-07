@@ -138,15 +138,25 @@ def stack_dict_into_tensor(data_dict, device=None):
     else:
         stacked_tensor = torch.empty(
             (fill_len, len(CLASS_ORDER)), device=device)
-    for class_name in data_dict.keys():
-        stack_index = CLASS_ORDER.index(class_name)
+        
+    if not RETURN_INDIV_LOSSES:
+        for class_name in data_dict.keys():
+            stack_index = CLASS_ORDER.index(class_name)
 
-        if RETURN_INDIV_LOSSES:
+            if RETURN_INDIV_LOSSES:
+                stacked_tensor[:, stack_index * SCALE:stack_index *
+                            SCALE + SCALE] = data_dict[class_name]
+            else:
+                stacked_tensor[:, stack_index] = data_dict[class_name]
+    else:
+        for class_name in data_dict.keys():
+            stack_index = CLASS_ORDER.index(class_name)
+
+            #if RETURN_INDIV_LOSSES:
             stacked_tensor[:, stack_index * SCALE:stack_index *
-                           SCALE + SCALE] = data_dict[class_name]
-        else:
-            stacked_tensor[:, stack_index] = data_dict[class_name]
-
+                        SCALE + SCALE] = data_dict[class_name]
+            #else:
+            #    stacked_tensor[:, stack_index] = data_dict[class_name]
     return stacked_tensor
 
 

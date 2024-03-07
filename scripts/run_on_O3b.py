@@ -21,7 +21,8 @@ from config import (
     BANDPASS_LOW,
     FACTORS_NOT_USED_FOR_FM,
     MODELS_LOCATION,
-    SEG_NUM_TIMESTEPS
+    SEG_NUM_TIMESTEPS,
+    CLASS_ORDER
     )
 import torch.nn as nn
 class BasedModel(nn.Module):
@@ -230,31 +231,34 @@ def whiten_bandpass_resample(
     device = torch.device(GPU_NAME)
 
     # Load LIGO data
-    try:
+    #try:
+    # Load LIGO data
+    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
+    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
 
-        #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
-        #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
+    #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
+    #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
         # Save with pickle
 
         #open the pickle files    
-        with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
-            strainL1 = pickle.load(f)
+        #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
+        #    strainL1 = pickle.load(f)
+        #
+        #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/H1_{start_point}_{end_point}.pkl", 'rb') as f:
+        #    strainH1 = pickle.load(f)
 
-        with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/H1_{start_point}_{end_point}.pkl", 'rb') as f:
-            strainH1 = pickle.load(f)
-
-    except:
-        print(f'Couldnt load {start_point}, {end_point}')
-        print('SKIPPING')
-        return None, None
+    #except:
+    #    print(f'Couldnt load {start_point}, {end_point}')
+    #    print('SKIPPING')
+    #    return None, None
 
     t0 = int(strainL1.t0 / u.s)
 
-    if shift != None:
-        shift_datapoints = shift * sample_rate
-        temp = strainL1[-shift_datapoints:]
-        strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
-        strainL1[:shift_datapoints] = temp
+   # if shift != None:
+   #     shift_datapoints = shift * sample_rate
+   #     temp = strainL1[-shift_datapoints:]
+   #     strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
+   #     strainL1[:shift_datapoints] = temp
 
     # Whiten, bandpass, and resample
     strainL1 = strainL1.resample(sample_rate)
@@ -266,26 +270,35 @@ def whiten_bandpass_resample(
     return [strainH1, strainL1]
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
-    model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
+    #model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
+    model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
     model_heuristic = BasedModel().to(DEVICE)
-    model_heuristic.load_state_dict(torch.load(model_path))
+    model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
     # split the data into 1-hour chunks to fit in memory best
     eval_at_once_len = int(3600)
     N_one_hour_splits = int(data_.shape[1]//(eval_at_once_len*SAMPLE_RATE) + 1)
     print("N splits:", N_one_hour_splits)
+
     for hour_split in range(N_one_hour_splits):
         start = int(hour_split*SAMPLE_RATE*eval_at_once_len)
         end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*eval_at_once_len))
         print(start, end)
+        if end - 10 < start:
+            return None
         data = data_[:, start:end]
 
         #DEVICE = torch.device(f'cuda:{args.gpu}')
-        model_path = ["/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/bbh.pt",
-                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sglf.pt",
-                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sghf.pt",
-                    "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/background.pt",
-                        "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/glitches.pt"]
+        #model_path = ["/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/bbh.pt",
+        #            "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sglf.pt",
+        #            "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/sghf.pt",
+        #            "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/background.pt",
+        #                "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/models/glitches.pt"]
+        model_path = ["output/O3av2/trained/models/bbh.pt", 
+                    "output/O3av2/trained/models/sglf.pt", 
+                    "output/O3av2/trained/models/sghf.pt", 
+                    "output/O3av2/trained/models/background.pt",
+                        "output/O3av2/trained/models/glitches.pt"]
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         orig_kernel = 50
@@ -296,9 +309,9 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         #if heuristics_tests:
             #long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
             #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
-        norm_factors = np.load(f"/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/norm_factor_params.npy")
+        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = ("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -312,10 +325,15 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
         std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
 
-        final_values, midpoints = full_evaluation(
+        #final_values, midpoints = full_evaluation(
+        #                data[None, :, :], models_path, DEVICE,
+        #                return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
+        final_values, midpoints, original, recreated = full_evaluation(  
                         data[None, :, :], models_path, DEVICE,
-                        return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
-
+                        return_midpoints=True, return_recreations=True,
+                        loaded_models=gwak_models, grad_flag=False)
+        print(335, final_values.shape)
+        print(336, midpoints.shape)
         final_values = final_values[0]
 
         # Set the threshold here
@@ -340,16 +358,19 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
         indices = indices.detach().cpu().numpy()
         # extract important "events" with indices
-        timeslide_chunks, edge_check_filter = extract_chunks(data, 0,
+        timeslide_chunks, edge_check_filter = extract_chunks(data, 0, # 0 - timeslide number 0 (no shifting happening)
                                             midpoints[indices],
                                             DEVICE, window_size=1024) # 0.25 seconds on either side
                                                                     # so it should come out to desired 0.5
+
         filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
         filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
         filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
         filtered_final_score = filtered_final_score[edge_check_filter]
         timeslide_chunks = timeslide_chunks[edge_check_filter]
         indices = indices[edge_check_filter]
+        
         filtered_timeslide_chunks = timeslide_chunks
 
         heuristics_tests = True
@@ -427,6 +448,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             axs[0, 0].legend()
             axs[0, 0].set_title(f'gps time: {start_point} + {midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len:.3f}')
             p = midpoints[loudest]
+
             do_q_scan = True
             if do_q_scan:
                 # plot the Q-scans
@@ -459,28 +481,72 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 axs[1, 1].set_ylabel("Freq (Hz)")
                 axs[1, 1].set_title("Livingston Q-Transform")
 
-            FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
-            best_far = get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
+            #FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
+            #best_far = get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
+            best_far = 0
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             print("best_score", best_score)
             plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.png', dpi=300, bbox_inches="tight")
             plt.close()
+
+            # indexing into midpoints with loudest should carry over to original and recreated - if just taking the strongst point to recreate
+            #p = midpoints[loudest]
+            fig, axs = plt.subplots(5, 2, figsize=(10, 13))
+
+            print(494, original['bbh'].shape)
+            for n, class_name in enumerate(CLASS_ORDER):
+                
+                #i, j = n // 2, n % 2 
+                i=n
+                detecs = {0:"_hanford", 1:"_livingston"}
+                for j in range(2):
+                    axs[i, j].plot(original[class_name][loudest][j], label = f'input_{class_name}')
+                    axs[i, j].plot(recreated[class_name][loudest][j], label = f'recreated_{class_name}')
+                    #axs[i, j].set_title(class_name + detecs[j])
+                    axs[i, j].legend()
+
+            axs[0, 0].set_title("hanford")
+            axs[0, 1].set_title("livingston")
+            #print("best_score", best_score)
+            plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_RECREATIONS.png', dpi=300, bbox_inches='tight')
+            plt.close()
+            
+            print(514, scaled_evals[loudest])
+            fig, axs = plt.subplots(10, 2, figsize=(10, 26))
+            for w in range(-5, 5):
+                best_channel = "bbh"
+                offset = 5
+                axs[w+offset, 0].plot(original[best_channel][loudest+w][0], label = "original")
+                axs[w+offset, 0].plot(recreated[best_channel][loudest+w][0], label = "recreated")
+                axs[w+offset, 0].legend()
+
+                axs[w+offset, 1].plot(original[best_channel][loudest+w][1], label = "original")
+                axs[w+offset, 1].plot(recreated[best_channel][loudest+w][1], label = "recreated")
+                axs[w+offset, 1].legend()
+
+                axs[0, 0].set_title("Hanford")
+                axs[0, 1].set_title("Livingston")
+
+            plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_PRODECURAL_RECREATIONS.png', dpi=300, bbox_inches='tight')
+            plt.close()
+
 
 def main(args):
     try:
         os.makedirs(args.savedir)
     except FileExistsError:
         None
-    gwtc_events=parse_gwtc_catalog("/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/gwtc.csv",
-                                  1238166018, 1253977218)
+    #gwtc_events=parse_gwtc_catalog("/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/gwtc.csv",
+    #                              1238166018, 1253977218)
 
-    valid_segments = np.load("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/O3a_intersections.npy")
-    trained_path = "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/" # fix hardcoding later
-
-    run_short_test = False
+    #valid_segments = np.load("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/O3a_intersections.npy")
+    #valid_segments = np.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/O3a_intersections.npy")
+    #trained_path = "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/" # fix hardcoding later
+    trained_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/gwak-paper-final-models/"
+    run_short_test = True
     if run_short_test:
         # testing code
-        print("valid segments", valid_segments)
+        #print("valid segments", valid_segments)
         A = 1243303084
         #A = 1243305672.9
         #A = 1251008449
