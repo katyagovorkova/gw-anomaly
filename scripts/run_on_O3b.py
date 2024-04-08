@@ -244,7 +244,6 @@ def whiten_bandpass_resample(
         #strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org")
         #strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point, host="losc-nds.ligo.org") #.get, verbose,,, .find
             # Save with pickle
-
             #open the pickle files    
             #with open(f"/n/holyscratch01/iaifi_lab/emoreno/gwak_o3a/data/L1_{start_point}_{end_point}.pkl", 'rb') as f:
             #    strainL1 = pickle.load(f)
@@ -282,6 +281,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
+
     # split the data into 1-hour chunks to fit in memory best
     eval_at_once_len = int(3600)
     N_one_hour_splits = int(data_.shape[1]//(eval_at_once_len*SAMPLE_RATE) + 1)
@@ -306,6 +306,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                     "output/O3av2/trained/models/sghf.pt", 
                     "output/O3av2/trained/models/background.pt",
                         "output/O3av2/trained/models/glitches.pt"]
+
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         orig_kernel = 50
@@ -318,7 +319,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = ("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -341,6 +342,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                         loaded_models=gwak_models, grad_flag=False)
         print(335, final_values.shape)
         print(336, midpoints.shape)
+
         final_values = final_values[0]
 
         # Set the threshold here
@@ -573,7 +575,6 @@ def main(args):
         #B = A + 10000
        # B = A + 3600
 
-        
         #A = 1243305672.9
         #A = 1251008449
         #A = 1242440636
