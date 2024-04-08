@@ -223,7 +223,17 @@ def three_panel_plotting(
         'Freq domain corr.',
         'Pearson'
     ]
-
+    rename_map = {
+        'background': 'Background',
+        'bbh': 'BBH',
+        'glitches': 'Glitch',
+        'sglf': 'SG 64-512 Hz',
+        'sghf': 'SG 512-1024 Hz',
+        'wnblf': 'WNB 40-400 Hz',
+        'wnbhf': 'WNB 400-1000 Hz',
+        'supernova': 'Supernova'
+    }
+    tag_ = rename_map[tag]
     ifo_colors = {
         0: 'goldenrod',
         1: 'darkgreen'}
@@ -265,7 +275,7 @@ def three_panel_plotting(
     strain = strain[:, 100 + 3 * 5:-(100 + 4 * 5)]
 
     ts_strain = np.linspace(0, len(strain[0, :]) / 4096, len(strain[0, :]))
-    axs[0].set_title(f'{tag} strain, SNR = {snr:.1f}')
+    axs[0].set_title(f'{tag_} strain, SNR = {snr:.1f}')
     axs[0].plot(ts_strain * 1000, strain[0, :],
                 label='Hanford', color=ifo_colors[0])
     axs[0].plot(ts_strain * 1000, strain[1, :],
@@ -586,12 +596,12 @@ def make_roc_curves(
                 TPRs.append(am_bin_detected[i]/am_bin_total[i])
                 snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
 
-        axs.plot(snr_bins_plot, TPRs, label=tag, c=colors[tag])
+        axs.plot(snr_bins_plot, TPRs, label=tag_, c=colors[tag], linewidth=4)
 
 
     # plt.yscale('log')
 
-    axs.legend()
+    axs.legend(fontsize=20)
     plt.grid(True)
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
@@ -682,7 +692,7 @@ def make_roc_curves_smoothing_comparison(data,
         am_bin_total = [0]*nbins
         for i, am in enumerate(amp_measure):
             insert_location = np.searchsorted(am_bins, am)
-            #print(am) 
+            #print(am)
             if insert_location >= 200:
                 continue
             #print(insert_location)
@@ -698,13 +708,13 @@ def make_roc_curves_smoothing_comparison(data,
                 TPRs.append(am_bin_detected[i]/am_bin_total[i])
                 snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
         if tag in colors:
-            axs.plot(snr_bins_plot, TPRs, label = f"{tag}, window: {smoothing_window}", c=colors[tag], alpha=(1-smoothing_window/200)**2)
+            axs.plot(snr_bins_plot, TPRs, label = f"{tag_}, window: {smoothing_window}", c=colors[tag], alpha=(1-smoothing_window/200)**2)
         else:
-            axs.plot(snr_bins_plot, TPRs, label = f"{tag}, window: {smoothing_window}", alpha=(1-smoothing_window/200)**2)
+            axs.plot(snr_bins_plot, TPRs, label = f"{tag_}, window: {smoothing_window}", alpha=(1-smoothing_window/200)**2)
 
 
     # plt.yscale('log')
-    
+
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
@@ -810,7 +820,7 @@ def make_roc_curves_smoothing_comparison(data,
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
 
-def make_heuristic_efficiency_plot():
+# def make_heuristic_efficiency_plot():
 
 
 def main(args):
@@ -864,16 +874,16 @@ def main(args):
     arr[-1] = weight[-1]
     weights.append(arr)
 
-    type1 = False
-    do_snr_vs_far = type1
-    do_fake_roc = type1
-    do_3_panel_plot = type1
-    do_combined_loss_curves = type1
-    do_train_signal_example_plots = type1
-    do_anomaly_signal_show = type1
-    do_learned_fm_weights = type1
+    type1 = True
+    do_snr_vs_far = 0
+    do_fake_roc = 0
+    do_3_panel_plot = 0
+    do_combined_loss_curves = 0
+    do_train_signal_example_plots = 0
+    do_anomaly_signal_show = 0
+    do_learned_fm_weights = 0
     do_make_roc_curves = type1
-    do_heuristic_efficiency = 1
+    do_heuristic_efficiency = 0
 
     if do_snr_vs_far or do_make_roc_curves:
 
@@ -911,50 +921,50 @@ def main(args):
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
         far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
-        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-                            [snrs_dict[elem] for elem in X3],
-                            model,
-                            far_hist,
-                            X3,
-                            args.plot_savedir,
-                            f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
-                            bias)
-        
-        
-        if do_heuristic_efficiency:
-            fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
-            fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
-            fm_model.load_state_dict(torch.load(
-                fm_model_path, map_location=GPU_NAME))
+        # amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+        #                     [snrs_dict[elem] for elem in X3],
+        #                     model,
+        #                     far_hist,
+        #                     X3,
+        #                     args.plot_savedir,
+        #                     f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
+        #                     bias)
 
-            linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-            bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-            linear_weights[:, -2] += linear_weights[:, -1]
-            linear_weights = linear_weights[:, :-1]
-            norm_factors = norm_factors[:, :-1]
 
-            mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
-            std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+        # if do_heuristic_efficiency:
+        #     fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        #     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+        #     fm_model.load_state_dict(torch.load(
+        #         fm_model_path, map_location=GPU_NAME))
 
-            tags = ['bbh', 'sghf']#, 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
-            for tag in tags:
+        #     linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
+        #     bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+        #     linear_weights[:, -2] += linear_weights[:, -1]
+        #     linear_weights = linear_weights[:, :-1]
+        #     norm_factors = norm_factors[:, :-1]
 
-                print(f'loading {tag}')
-                ts = time.time()
-                data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
-                #data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
-                data = torch.from_numpy(data).to(DEVICE).float()
+        #     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
+        #     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
 
-                print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
+        #     tags = ['bbh', 'sghf']#, 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
+        #     for tag in tags:
 
-                data = (data - means) / stds
-                data = data#[1000:]
-                snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-                passed_herustics = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals_heuristic_res.npy')
-                # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
+        #         print(f'loading {tag}')
+        #         ts = time.time()
+        #         data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
+        #         #data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
+        #         data = torch.from_numpy(data).to(DEVICE).float()
 
-                data_dict[tag] = data
-                snrs_dict[tag] = snrs
+        #         print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
+
+        #         data = (data - means) / stds
+        #         data = data#[1000:]
+        #         snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+        #         passed_herustics = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals_heuristic_res.npy')
+        #         # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
+
+        #         data_dict[tag] = data
+        #         snrs_dict[tag] = snrs
 
 
         if do_make_roc_curves: #roc curve

@@ -209,9 +209,9 @@ rule plot_results:
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
-        fm_model_path = '/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt'
+        fm_model_path = 'output/O3av2_non_linear_bbh_only/trained/fm_model.pt'
     params:
-        evaluation_dir = '/home/katya.govorkova/gwak-paper-final-models/',
+        evaluation_dir = 'output/O3av2_non_linear_bbh_only/',
         save_path = directory(f'output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '

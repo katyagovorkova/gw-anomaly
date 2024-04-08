@@ -1,13 +1,13 @@
 # Version of the code with which the data was generated
 PERIOD = 'O3a' # or O3b
-VERSION = PERIOD + 'v2' # _only_correlation
+VERSION = PERIOD + 'v2_non_linear_bbh_only' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
 STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
 DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
 MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/'
 
 # GPU
-GPU_NAME = 'cuda:2'
+GPU_NAME = 'cuda:1'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
@@ -25,7 +25,7 @@ TRAIN_INJECTION_SEGMENT_LENGTH = 4
 FM_INJECTION_SEGMENT_LENGTH = 5
 FM_INJECTION_SNR = 20
 DO_SMOOTHING = True
-SMOOTHING_KERNEL = 50
+SMOOTHING_KERNEL = 1
 SMOOTHING_KERNEL_SIZES = [1, 10, 50, 100]
 DATA_EVAL_MAX_BATCH = 100
 
