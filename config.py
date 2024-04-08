@@ -1,13 +1,14 @@
 # Version of the code with which the data was generated
 PERIOD = 'O3a' # or O3b
-VERSION = PERIOD + 'v2' # _only_correlation
+VERSION = PERIOD + 'v3' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
 STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
 DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
 MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/'
+FM_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/'
 
 # GPU
-GPU_NAME = 'cuda:2'
+GPU_NAME = 'cuda:3'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
@@ -123,7 +124,7 @@ FACTORS_NOT_USED_FOR_FM = [3,7,11,15,19]
 # timeslides
 GW_EVENT_CLEANING_WINDOW = 5
 TIMESLIDE_STEP = 0.5
-TIMESLIDE_TOTAL_DURATION = int(1.25 * 365 * 24 * 3600 / 4) # run on 4 different GPUs, so in total 400 * 24 * 3600
+TIMESLIDE_TOTAL_DURATION = int(1.1 * 365 * 24 * 3600 / 4) # run on 4 different GPUs, so in total 400 * 24 * 3600
 FM_TIMESLIDE_TOTAL_DURATION = 0.1 * 30 * 24 * 3600
 TIMESLIDES_START = 1243382418 # Ryan = 1248652818; Eric = 1243382418; Katya = 1238166018
 TIMESLIDES_STOP =  1248652818 # Ryan = 1253977218; Eric = 1248652818; Katya = 1243382418
@@ -145,7 +146,7 @@ SNR_VS_FAR_HORIZONTAL_LINES = [3600, 24 * 3600,
 SNR_VS_FAR_HL_LABELS = ['hour', 'day', 'week', 'month', 'year']
 
 # varying SNR injection
-N_VARYING_SNR_INJECTIONS = 10000
+N_VARYING_SNR_INJECTIONS = 2000
 VARYING_SNR_DISTRIBUTION = 'uniform'
 VARYING_SNR_LOW = 5
 VARYING_SNR_HIGH = 50
