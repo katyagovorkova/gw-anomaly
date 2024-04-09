@@ -1,14 +1,14 @@
 # Version of the code with which the data was generated
-PERIOD = 'O3a' # or O3b
+PERIOD = 'O3b' # or O3b
 VERSION = PERIOD + 'v3' # _only_correlation
-STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
-STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
+STRAIN_START = 1256663958 # for O3b 1256663958 1238166018
+STRAIN_STOP = 1256673192 # for O3b 1256673192 1238170289
 DATA_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/data'
 MODELS_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/models/'
 FM_LOCATION = '/home/katya.govorkova/gwak-paper-final-models/trained/'
 
 # GPU
-GPU_NAME = 'cuda:3'
+GPU_NAME = 'cuda:2'
 # data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
