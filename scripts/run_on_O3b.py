@@ -247,9 +247,9 @@ def whiten_bandpass_resample(
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
     # why is it in plots, Ryan??
-    model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
+    heuristic_model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
     model_heuristic = BasedModel().to(DEVICE)
-    model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
+    model_heuristic.load_state_dict(torch.load(heuristic_model_path, map_location=DEVICE))
 
     # split the data into 1-hour chunks to fit in memory best
     eval_at_once_len = int(3600)
@@ -263,6 +263,13 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         if end - 10 < start:
             return None
         data = data_[:, start:end]
+
+        model_path = ["bbh.pt",
+                        "sglf.pt",
+                        "sghf.pt",
+                        "background.pt",
+                        "glitches.pt"]
+
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         orig_kernel = 50
@@ -328,6 +335,33 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         indices = indices[edge_check_filter]
 
         filtered_timeslide_chunks = timeslide_chunks
+
+        heuristics_tests = True
+        if heuristics_tests:
+            N_initial = len(filtered_final_score)
+            passed_heuristics = []
+            gwak_filtered = extract(filtered_final_scaled_evals)
+            for i, strain_segment in enumerate(timeslide_chunks):
+                strain_feats = parse_strain(strain_segment)
+                together = np.concatenate([strain_feats, gwak_filtered[i]])
+                res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+                #passed_heuristics.append(res<0.46)
+
+                res_sigmoid = sig_prob_function(res)
+                print(res, res_sigmoid, filtered_final_score[i])
+                final_final = res_sigmoid * filtered_final_score[i]
+                print(res, res_sigmoid, filtered_final_score[i])
+                filtered_final_score[i] *= res_sigmoid
+                print(res, res_sigmoid, filtered_final_score[i])
+                passed_heuristics.append(final_final[0] < -1) #[0] since it was saving arrays(arrays)
+                
+
+            filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
+            filtered_final_score = filtered_final_score[passed_heuristics]
+            filtered_timeslide_chunks = timeslide_chunks[passed_heuristics]
+            indices = indices[passed_heuristics]
+
+            print(f"Fraction removed by heuristics test {N_initial -len(filtered_final_score)}/{N_initial}")
 
         # rename them for less confusion, easier typing
         gwak_values = filtered_final_scaled_evals
@@ -469,7 +503,8 @@ def main(args):
     except FileExistsError:
         None
 
-    valid_segments = np.load('/home/katya.govorkova/gw-anomaly/output/O3b_intersections.npy')
+    #valid_segments = np.load('/home/katya.govorkova/gw-anomaly/output/O3b_intersections.npy')
+    valid_segments = np.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/O3b_intersections.npy")
     trained_path = '/home/katya.govorkova/gwak-paper-final-models/'
 
     run_short_test = False
@@ -488,6 +523,8 @@ def main(args):
     f_segments = 'output/done_O3b_segments.npy'
     if not os.path.exists(f_segments):
         np.save(f_segments, np.array([0]))
+
+    print(valid_segments)
 
     for a, b in valid_segments:
         done_segments = np.load(f_segments)
