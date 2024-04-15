@@ -82,7 +82,7 @@ def main(args):
         signal_evals.append(np.load(f'{file_name}')[:, mid - 150:mid + 150, :])
 
     signal_evals = np.concatenate(signal_evals, axis=0)
-    signal_evals = np.delete(signal_evals, FACTORS_NOT_USED_FOR_FM, -1)
+    # signal_evals = np.delete(signal_evals, FACTORS_NOT_USED_FOR_FM, -1)
 
     timeslide_evals = []
     for file_name in os.listdir(args.timeslide_path):
@@ -98,18 +98,21 @@ def main(args):
 
     norm_factors = np.array(norm_factors)
     means = np.mean(norm_factors[:, 0, 0, :], axis=0)
-    means = np.delete(means, FACTORS_NOT_USED_FOR_FM, -1)
+    # means = np.delete(means, FACTORS_NOT_USED_FOR_FM, -1)
 
     stds = np.mean(norm_factors[:, 1, 0, :], axis=0)
-    stds = np.delete(stds, FACTORS_NOT_USED_FOR_FM, -1)
+    # stds = np.delete(stds, FACTORS_NOT_USED_FOR_FM, -1)
 
     timeslide_evals = np.concatenate(timeslide_evals, axis=0)
-    timeslide_evals = np.delete(timeslide_evals, FACTORS_NOT_USED_FOR_FM, -1)
+    # timeslide_evals = np.delete(timeslide_evals, FACTORS_NOT_USED_FOR_FM, -1)
 
     signal_evals = (signal_evals - means) / stds
     timeslide_evals = (timeslide_evals - means) / stds
 
     np.save(args.norm_factor_save_file, np.stack([means, stds], axis=0))
+
+    print(f'Signal shape is {signal_evals.shape}')
+    print(f'Timeslide shape is {timeslide_evals.shape}')
 
     optimal_coeffs = optimize_hyperplane(signal_evals, timeslide_evals)
     np.save(args.save_file, optimal_coeffs)

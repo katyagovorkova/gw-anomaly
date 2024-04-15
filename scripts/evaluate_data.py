@@ -222,9 +222,9 @@ def main(args):
     if DATA_EVAL_USE_HEURISTIC:
         # need to get the point of highest score
         
-        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+        norm_factors = np.load(f"output/trained/norm_factor_params.npy")
 
-        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = ("output/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))

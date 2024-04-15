@@ -1,9 +1,12 @@
 from config import (
     VERSION,
-    TIMESLIDE_TOTAL_DURATION,
+    PERIOD,
+    DATA_LOCATION,
+    MODELS_LOCATION,
+    FM_LOCATION,
     TIMESLIDES_START,
     TIMESLIDES_STOP,
-    DATA_LOCATION
+    TIMESLIDE_TOTAL_DURATION
     )
 
 signalclasses = ['bbh', 'sglf', 'sghf']
@@ -17,35 +20,130 @@ fm_training_classes = [
     'wnbhf_fm_optimization',
     'wnblf_fm_optimization'
     ]
+dataclasses = fm_training_classes+[
+    'wnblf',
+    'wnbhf',
+    'supernova',
+    'timeslides',
+    'bbh_varying_snr',
+    'sghf_varying_snr',
+    'sglf_varying_snr',
+    'wnbhf_varying_snr',
+    'wnblf_varying_snr',
+    'supernova_varying_snr']
 
 wildcard_constraints:
     modelclass = '|'.join([x for x in modelclasses]),
+    dataclass = '|'.join([x for x in dataclasses + modelclasses])
+
+
+rule find_valid_segments:
+    input:
+        hanford_path = 'data/{period}_Hanford_segments.json',
+        livingston_path = 'data/{period}_Livingston_segments.json'
+    params:
+        save_path = 'output/{period}_intersections.npy'
+    script:
+        'scripts/segments_intersection.py'
+
+rule run_omicron:
+    params:
+        user_name = 'katya.govorkova',
+        folder = f'output/omicron/'
+    shell:
+        'mkdir -p {params.folder}; '
+        'ligo-proxy-init {params.user_name}; '
+        'python3 scripts/run_omicron.py {params.intersections} {params.folder}'
+
+rule fetch_site_data:
+    input:
+        omicron = rules.run_omicron.params.folder,
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period=PERIOD)
+    output:
+        'tmp/dummy_{version}_{site}.txt'
+    shell:
+        'touch {output}; '
+        'python3 scripts/fetch_data.py {input.omicron} {input.intersections}\
+            --site {wildcards.site}'
+
+rule fetch_timeslide_data:
+    """
+    # 1238166018 -- 1 april 2019
+    # 1243382418 -- 1 june 2019
+    # 1248652818 -- 1 august 2019
+    # 1253977218 -- 1 oct 2019
+    """
+    params:
+        start = 1256663958,
+        stop = 1257663958
+    shell:
+        'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
+
+rule generate_data:
+    input:
+        omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
+        intersections = expand(rules.find_valid_segments.params.save_path,
+            period=PERIOD),
+    params:
+        dependencies = expand(rules.fetch_site_data.output,
+                                site=['L1', 'H1'],
+                                version=VERSION)
+    output:
+        file = 'output/{version}/data/{dataclass}.npz'
+    shell:
+        'python3 scripts/generate.py {input.omicron} {output.file} \
+            --stype {wildcards.dataclass} \
+            --intersections {input.intersections} \
+            --period {PERIOD}'
+
+rule upload_data:
+    input:
+        expand(rules.generate_data.output.file,
+               dataclass='{dataclass}',
+               version='{version}')
+    output:
+        '/home/katya.govorkova/gwak/{version}/data/{dataclass}.npz'
+    shell:
+        'mkdir -p /home/katya.govorkova/gwak/{wildcards.version}/data/; '
+        'cp {input} {output}; '
+
+rule validate_data:
+    input:
+        expand(rules.upload_data.output,
+               dataclass=modelclasses+dataclasses,
+               version=VERSION)
+    shell:
+        'mkdir -p data/{VERSION}/; '
+        'python3 scripts/validate_data.py {input}'
 
 rule train_gwak:
-    params:
+    input:
         data = expand('{datalocation}/{dataclass}.npz',
                       dataclass='{dataclass}',
                       datalocation=DATA_LOCATION),
+    output:
         savedir = directory('output/{version}/trained/{dataclass}'),
         model_file = 'output/{version}/trained/models/{dataclass}.pt'
     shell:
         'mkdir -p {output.savedir}; '
-        'python3 scripts/train_gwak.py {params.data} {output.model_file} {output.savedir} '
+        'python3 scripts/train_gwak.py {input.data} {output.model_file} {output.savedir} '
 
 rule generate_timeslides_for_far:
-    params:
-        model_path = expand(rules.train_gwak.params.model_file,
+    input:
+        model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
-            version='O3av2'),
-        from_saved_models = True,
-        data_path = f'/home/katya.govorkova/gw-anomaly/output/O3av2/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+            version=VERSION),
+        data_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+    params:
+        from_saved_models = False,
     output:
         save_evals_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/'),
         log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
     shell:
         'mkdir -p {output.save_evals_path}; '
-        'python3 scripts/evaluate_timeslides.py {params.model_path} {params.from_saved_models} \
-            --data-path {params.data_path} \
+        'python3 scripts/evaluate_timeslides.py {input.model_path} {params.from_saved_models} \
+            --data-path {input.data_path} \
             --save-evals-path {output.save_evals_path} \
             --files-to-eval {wildcards.files_to_eval} \
             --timeslide-total-duration {wildcards.timeslide_total_duration} \
@@ -60,18 +158,19 @@ rule all_timeslides_for_far:
             timeslide_total_duration=10044) # 3.156e+8/800/4/3
 
 rule evaluate_signals:
-    params:
-        model_path = expand(rules.train_gwak.params.model_file,
+    input:
+        model_path = expand(rules.train_gwak.output.model_file,
                             dataclass=modelclasses,
                             version='{version}'),
-        from_saved_models = True,
         source_file = expand('{datalocation}/{dataclass}.npz',
                              dataclass='{signal_dataclass}',
                              datalocation=DATA_LOCATION),
+    params:
+        from_saved_models = False,
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
-        'python3 scripts/evaluate_data.py {params.source_file} {output.save_file} {params.model_path} {params.from_saved_models}'
+        'python3 scripts/evaluate_data.py {input.source_file} {output.save_file} {input.model_path} {params.from_saved_models}'
 
 rule plot_cut_efficiency:
     input:
@@ -91,10 +190,10 @@ rule plot_cut_efficiency:
 
 rule generate_timeslides_for_fm:
     params:
-        model_path = expand(rules.train_gwak.params.model_file,
+        model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
-        from_saved_models = True,
+        from_saved_models = False,
         data_path = expand('{datalocation}/{dataclass}.npz',
             dataclass='timeslides',
             datalocation=DATA_LOCATION),
@@ -120,26 +219,26 @@ rule train_final_metric:
             version=VERSION),
         timeslides = f'output/{VERSION}/timeslides/evals/',
         normfactors = f'output/{VERSION}/timeslides/normalization/',
-    params:
+    output:
         params_file = f'output/{VERSION}/trained/final_metric_params.npy',
         norm_factor_file = f'output/{VERSION}/trained/norm_factor_params.npy',
         fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
     shell:
-        'python3 scripts/final_metric_optimization.py {params.params_file} \
-            {params.fm_model_path} {params.norm_factor_file} \
+        'python3 scripts/final_metric_optimization.py {output.params_file} \
+            {output.fm_model_path} {output.norm_factor_file} \
             --timeslide-path {input.timeslides} \
             --signal-path {input.signals} \
             --norm-factor-path {input.normfactors}'
 
 rule recreation_and_quak_plots:
     input:
-        fm_model_path = rules.train_final_metric.params.fm_model_path,
+        fm_model_path = rules.train_final_metric.output.fm_model_path,
     params:
-        models = expand(rules.train_gwak.params.model_file,
+        models = expand(rules.train_gwak.output.model_file,
                         dataclass=modelclasses,
                         version=VERSION),
-        from_saved_models = True,
-        from_saved_fm_model = True,
+        from_saved_models = False,
+        from_saved_fm_model = False,
         test_path = expand('{datalocation}/{dataclass}.npz',
                            dataclass='bbh',
                            datalocation=DATA_LOCATION),
@@ -153,29 +252,29 @@ rule compute_far:
     input:
         data_path = expand(rules.generate_timeslides_for_far.output.save_evals_path,
             id='{far_id}',
-            version='O3av2',
+            version=VERSION,
             timeslide_total_duration=TIMESLIDE_TOTAL_DURATION,
             files_to_eval=-1),
-    params:
-        metric_coefs_path = rules.train_final_metric.params.params_file,
-        norm_factors_path = rules.train_final_metric.params.norm_factor_file,
-        fm_model_path = rules.train_final_metric.params.fm_model_path,
-        model_path = expand(rules.train_gwak.params.model_file,
+        metric_coefs_path = rules.train_final_metric.output.params_file,
+        norm_factors_path = rules.train_final_metric.output.norm_factor_file,
+        fm_model_path = rules.train_final_metric.output.fm_model_path,
+        model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
-        from_saved_models = True,
-        from_saved_fm_model = True,
+    params:
+        from_saved_models = False,
+        from_saved_fm_model = False,
         shorten_timeslides = False,
     output:
         save_path = 'output/{version}/far_bins_{far_id}.npy'
     shell:
         'touch {output.save_path};'
-        'python3 scripts/compute_far.py {output.save_path} {params.model_path} {params.from_saved_models} \
+        'python3 scripts/compute_far.py {output.save_path} {input.model_path} {params.from_saved_models} \
             --data-path {input.data_path} \
-            --fm-model-path {params.fm_model_path} \
+            --fm-model-path {input.fm_model_path} \
             --from-saved-fm-model {params.from_saved_fm_model} \
-            --metric-coefs-path {params.metric_coefs_path} \
-            --norm-factor-path {params.norm_factors_path} \
+            --metric-coefs-path {input.metric_coefs_path} \
+            --norm-factor-path {input.norm_factors_path} \
             --fm-shortened-timeslides {params.shorten_timeslides} \
             --gpu {wildcards.far_id}'
 
@@ -191,13 +290,13 @@ rule merge_far_hist:
 
 rule quak_plotting_prediction_and_recreation:
     params:
-        model_path = expand(rules.train_gwak.params.model_file,
+        model_path = expand(rules.train_gwak.output.model_file,
                             dataclass=modelclasses,
                             version=VERSION),
         test_data = expand('{datalocation}/{dataclass}.npz',
                            dataclass='{dataclass}',
                            datalocation=DATA_LOCATION),
-        from_saved_models = True,
+        from_saved_models = False,
         reduce_loss = False,
         save_file = 'output/{VERSION}/evaluated/quak_{dataclass}.npz'
     shell:
@@ -207,7 +306,7 @@ rule quak_plotting_prediction_and_recreation:
 
 rule plot_results:
     input:
-        dependencies = [ #rules.merge_far_hist.output.save_path,
+        dependencies = [rules.merge_far_hist.output.save_path,
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],

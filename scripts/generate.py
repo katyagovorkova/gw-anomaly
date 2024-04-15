@@ -158,8 +158,6 @@ def sg_polarization_generator(
         dict(zip(injection_parameters, col))
         for col in zip(*injection_parameters.values())
     ]
-    print(injection_parameters)
-    assert 0
     if specified_params is not None:
         # set for all elements
         for param in specified_params: #key
@@ -684,7 +682,7 @@ def main(args):
         bbh_cross, bbh_plus = bbh_polarization_generator(
             N_VARYING_SNR_INJECTIONS)
 
-        sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
+        # sampled_hrss = calculate_hrss(bbh_cross, bbh_plus)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
@@ -696,19 +694,19 @@ def main(args):
                                                     SNR=sampler,
                                                     return_injection_snr=True,
                                                     return_scales=True)
-        sampled_hrss *= scales
+        # sampled_hrss *= scales
         training_data = BBH_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
 
-        plt.scatter(sampled_hrss, sampled_snr)
-        plt.savefig('output/hrss_vs_snr.png', dpi=300)
+        # plt.scatter(sampled_hrss, sampled_snr)
+        # plt.savefig('output/hrss_vs_snr.png', dpi=300)
 
     elif args.stype == 'sglf_varying_snr' or args.stype == 'sghf_varying_snr' or args.stype == 'sglf_fm_optimization' or args.stype == 'sghf_fm_optimization':
         # 1: generate the polarization files for the signal classes of interest
         sg_cross, sg_plus = sg_polarization_generator(N_VARYING_SNR_INJECTIONS,
                                                       prior_file=f'data/{args.stype[:4]}.prior')
 
-        sampled_hrss = calculate_hrss(sg_cross, sg_plus)
+        # sampled_hrss = calculate_hrss(sg_cross, sg_plus)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
@@ -739,7 +737,7 @@ def main(args):
             fmin=fmin,
             fmax=fmax)
 
-        sampled_hrss = calculate_hrss(wnb_cross, wnb_plus)
+        # sampled_hrss = calculate_hrss(wnb_cross, wnb_plus)
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, VARYING_SNR_LOW, VARYING_SNR_HIGH)
 
@@ -751,21 +749,21 @@ def main(args):
                                                    SNR=sampler,
                                                    return_injection_snr=True,
                                                    return_scales=True)
-        sampled_hrss *= scales
+        # sampled_hrss *= scales
         training_data = dict(data=training_data)
 
     elif args.stype == 'supernova_varying_snr' or args.stype == 'supernova_fm_optimization':
         # 1 : Fetch the polarization files
         sn_cross, sn_plus = fetch_sn_polarization(args.sn_polarization_path)
 
-        sampled_hrss = calculate_hrss(sn_cross, sn_plus)
+        # sampled_hrss = calculate_hrss(sn_cross, sn_plus)
         # copy the array to get more samples, approximately equal to N_VARYING_SNR_INJECTIONS
         #'uniform' prior over the cross and plus, so just copy each one some number of times
         n_repeat = int(N_VARYING_SNR_INJECTIONS / len(sn_cross))
         sn_cross, sn_plus = repeat_arr(
             sn_cross, n_repeat), repeat_arr(sn_plus, n_repeat)
-        
-        sampled_hrss = repeat_arr(sampled_hrss, n_repeat)
+
+        # sampled_hrss = repeat_arr(sampled_hrss, n_repeat)
 
         sampler = make_snr_sampler(
             VARYING_SNR_DISTRIBUTION, SNR_SN_LOW, SNR_SN_HIGH)
@@ -779,10 +777,10 @@ def main(args):
                                                    return_injection_snr=True,
                                                    return_scales=True)
 
-        sampled_hrss = repeat_arr(sampled_hrss[:, np.newaxis], n_repeat)
-        sampled_hrss = sampled_hrss[:,0]
+        # sampled_hrss = repeat_arr(sampled_hrss[:, np.newaxis], n_repeat)
+        # sampled_hrss = sampled_hrss[:,0]
 
-        sampled_hrss *= scales
+        # sampled_hrss *= scales
         training_data = dict(data=training_data)
 
     elif args.stype == 'wnbhf' or args.stype == 'wnblf':
@@ -834,7 +832,7 @@ def main(args):
 
         # sine gaussians
 
-        
+
 
     np.savez(args.save_file, **training_data)
 
@@ -843,10 +841,10 @@ def main(args):
         snr_save_path = f'{args.save_file[:-4]}_SNR{args.save_file[-4:]}'
         np.save(snr_save_path, sampled_snr)
 
-    if sampled_hrss is not None:
-        # drop it in between name and .npy
-        hrss_save_path = f'{args.save_file[:-4]}_hrss{args.save_file[-4:]}'
-        np.save(hrss_save_path, sampled_hrss)
+    # if sampled_hrss is not None:
+    #     # drop it in between name and .npy
+    #     hrss_save_path = f'{args.save_file[:-4]}_hrss{args.save_file[-4:]}'
+    #     np.save(hrss_save_path, sampled_hrss)
 
 
 if __name__ == '__main__':
