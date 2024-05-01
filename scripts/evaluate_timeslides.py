@@ -23,7 +23,7 @@ from config import (
     #GPU_NAME
     )
 #device_str = GPU_NAME
-heuristics_tests = True
+heuristics_tests = False
 import torch.nn as nn
 class BasedModel(nn.Module):
     def __init__(self):
@@ -419,17 +419,17 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    histogram = np.zeros(1000)
-    if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
-        np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
+    # histogram = np.zeros(1000)
+    # if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
+    #     np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
 
-    gwak_histogram = np.zeros((11, 1000))
-    if not os.path.exists(f"{args.save_evals_path}_timeslide_gwak_hist.npy"):
-        np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
+    # gwak_histogram = np.zeros((11, 1000))
+    # if not os.path.exists(f"{args.save_evals_path}_timeslide_gwak_hist.npy"):
+    #     np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
 
-    heuristics_data = np.zeros((0, 7))
-    if not os.path.exists(f"{args.save_evals_path}_heuristics_data.npy"):
-        np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristics_data)
+    # heuristics_data = np.zeros((0, 7))
+    # if not os.path.exists(f"{args.save_evals_path}_heuristics_data.npy"):
+    #     np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristics_data)
 
 
     folder_path = args.data_path

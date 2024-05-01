@@ -98,7 +98,7 @@ def main(args):
         def update_hist_cpu(vals):
             vals = np.array(vals)
             # a trick to not to re-evaluate saved timeslides
-            vals = np.delete(vals, FACTORS_NOT_USED_FOR_FM, -1)
+            # vals = np.delete(vals, FACTORS_NOT_USED_FOR_FM, -1)
             #vals = torch.from_numpy(vals).to(DEVICE)
             # flatten batch dimension
             vals = np.reshape(vals, (vals.shape[
@@ -229,7 +229,7 @@ def main(args):
                 scores = []
                 scaled_evals = []
                 for elem in final_values[0]:
-                    elem = np.delete(elem, FACTORS_NOT_USED_FOR_FM, -1)
+                    # elem = np.delete(elem, FACTORS_NOT_USED_FOR_FM, -1)
                     elem = (elem - norm_factors[0]) / norm_factors[1]
                     scaled_eval = np.multiply(elem, linear_weights)
                     #assert 0

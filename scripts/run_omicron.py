@@ -255,8 +255,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     segments = np.load(args.intersections)
-    # dirty trick for O3b
-    if len(segments)==2: segments = [segments]
+
     for segment in segments:
         if os.path.exists(f'{args.outdir}/{segment[0]}_{segment[1]}/omicron/training/H1/triggers/H1:{CHANNEL}/') \
                 and os.path.exists(f'{args.outdir}/{segment[0]}_{segment[1]}/omicron/training/L1/triggers/L1:{CHANNEL}/'):

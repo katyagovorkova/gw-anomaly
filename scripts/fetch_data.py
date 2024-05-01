@@ -24,9 +24,12 @@ def main(args):
         else:
             if not os.path.exists(f'{args.folder_path}/{segment[0]}_{segment[1]}/'):
                 os.mkdir(f'{args.folder_path}/{segment[0]}_{segment[1]}/')
-            data = TimeSeries.get(f'{args.site}:{CHANNEL}', segment[0], segment[1])
-            data.write(f'{args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5')
-            print(f'Fetching completed for {segment[0]} {segment[1]}')
+            try:
+                data = TimeSeries.get(f'{args.site}:{CHANNEL}', segment[0], segment[1])
+                data.write(f'{args.folder_path}/{segment[0]}_{segment[1]}/data_{args.site}.h5')
+                print(f'Fetching completed for {segment[0]} {segment[1]}')
+            except:
+                continue
 
 
 if __name__ == '__main__':

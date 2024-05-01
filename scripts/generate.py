@@ -635,12 +635,12 @@ def main(args):
 
     elif args.stype == 'glitches':
 
-        # we are using O3a glitches for O3b
-        if args.period == 'O3b':
-            training_data = np.load('/home/katya.govorkova/gwak/v2/data/glitches.npz')['data']
-            training_data = dict(data=training_data)
+        # # we are using O3a glitches for O3b
+        # if args.period == 'O3b':
+        #     training_data = np.load('/home/katya.govorkova/gwak/v2/data/glitches.npz')['data']
+        #     training_data = dict(data=training_data)
 
-        else:
+        # else:
             segments = np.load(args.intersections)
             datums = []
 
@@ -718,7 +718,7 @@ def main(args):
                                                    SNR=sampler,
                                                    return_injection_snr=True,
                                                    return_scales=True)
-        sampled_hrss *= scales
+        # sampled_hrss *= scales
         training_data = sg_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
 

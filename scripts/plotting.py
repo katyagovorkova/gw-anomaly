@@ -116,7 +116,7 @@ def amp_measure_vs_far_plotting(
         else:
             fm_vals = np.dot(data, metric_coefs)
 
-        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL/10)/SMOOTHING_KERNEL/10, mode='same'),
+        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL//10)/SMOOTHING_KERNEL//10, mode='same'),
             axis=1,
             arr=fm_vals)
 
@@ -682,7 +682,7 @@ def make_roc_curves_smoothing_comparison(data,
         am_bin_total = [0]*nbins
         for i, am in enumerate(amp_measure):
             insert_location = np.searchsorted(am_bins, am)
-            #print(am) 
+            #print(am)
             if insert_location >= 200:
                 continue
             #print(insert_location)
@@ -704,7 +704,7 @@ def make_roc_curves_smoothing_comparison(data,
 
 
     # plt.yscale('log')
-    
+
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
@@ -810,7 +810,7 @@ def make_roc_curves_smoothing_comparison(data,
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
 
-def make_heuristic_efficiency_plot():
+# def make_heuristic_efficiency_plot():
 
 
 def main(args):
@@ -865,15 +865,15 @@ def main(args):
     weights.append(arr)
 
     type1 = False
-    do_snr_vs_far = type1
+    do_snr_vs_far = 0
     do_fake_roc = type1
     do_3_panel_plot = type1
     do_combined_loss_curves = type1
     do_train_signal_example_plots = type1
     do_anomaly_signal_show = type1
-    do_learned_fm_weights = type1
-    do_make_roc_curves = type1
-    do_heuristic_efficiency = 1
+    do_learned_fm_weights = 0
+    do_make_roc_curves = 1
+    do_heuristic_efficiency = 0
 
     if do_snr_vs_far or do_make_roc_curves:
 
@@ -895,14 +895,14 @@ def main(args):
             print(f'loading {tag}')
             ts = time.time()
             data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
-            data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
+            # data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
 
             print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
 
             data = (data - means) / stds
             data = data#[1000:]
             snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-            # hrss = np.load(f'/home/katya.govorkova/gwak-paper-final-models/data/{tag}_varying_snr_hrss.npz.npy')
+            # hrss = np.load(f'output/data/{tag}_varying_snr_hrss.npz.npy')
 
             data_dict[tag] = data
             snrs_dict[tag] = snrs
@@ -919,8 +919,8 @@ def main(args):
                             args.plot_savedir,
                             f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
                             bias)
-        
-        
+
+
         if do_heuristic_efficiency:
             fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
             fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
@@ -929,9 +929,9 @@ def main(args):
 
             linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
             bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-            linear_weights[:, -2] += linear_weights[:, -1]
-            linear_weights = linear_weights[:, :-1]
-            norm_factors = norm_factors[:, :-1]
+            # linear_weights[:, -2] += linear_weights[:, -1]
+            # linear_weights = linear_weights[:, :-1]
+            # norm_factors = norm_factors[:, :-1]
 
             mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
             std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
@@ -1029,7 +1029,7 @@ def main(args):
         for tag in tags:
             strains = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr.npz')['data'][:, inds[tag]]
             data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')[inds[tag]]
-            data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
+            # data = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
             data = (data - means) / stds
             snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')[inds[tag]]
 

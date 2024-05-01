@@ -18,6 +18,7 @@ import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
+    VERSION,
     SEGMENT_OVERLAP,
     GPU_NAME,
     CLASS_ORDER,
@@ -48,7 +49,7 @@ def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
         if p < minval:
             minval = p
             shift_idx = shift
-        
+
     return minval, shift_idx
 
 import torch.nn as nn
@@ -60,7 +61,7 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-        
+
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
@@ -91,11 +92,11 @@ def parse_strain(x):
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
     #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
-    return long_pearson, HSS, LSS    
-    
+    return long_pearson, HSS, LSS
+
 def full_evaluation(data, model_folder_path, device, return_midpoints=False,
                     loaded_models=None, selection=None, grad_flag=True,
-                    already_split=False, precomputed_rnn=None, batch_size=None, 
+                    already_split=False, precomputed_rnn=None, batch_size=None,
                     do_rnn_precomp=False, return_recreations=False):
     '''
     Passed in data is of shape (N_samples, 2, time_axis)
@@ -135,7 +136,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
     #t61 = time.time()
     quak_predictions_dict = quak_eval(
         segments_normalized, model_folder_path, device, loaded_models=loaded_models,
-        grad_flag = grad_flag, precomputed_rnn=precomputed_rnn, batch_size=batch_size, 
+        grad_flag = grad_flag, precomputed_rnn=precomputed_rnn, batch_size=batch_size,
         do_rnn_precomp=do_rnn_precomp, reduce_loss= not(return_recreations) )
     if do_rnn_precomp:
         return quak_predictions_dict
@@ -147,7 +148,7 @@ def full_evaluation(data, model_folder_path, device, return_midpoints=False,
             quak_predictions_dict['freq_loss'], device=device)
         originals = quak_predictions_dict['original']
         recreations = quak_predictions_dict['recreated']
-        
+
     else:
         quak_predictions = stack_dict_into_tensor(
             quak_predictions_dict, device=device)
@@ -218,21 +219,22 @@ def main(args):
     model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path))
-    
-    if DATA_EVAL_USE_HEURISTIC:
-        # need to get the point of highest score
-        
-        norm_factors = np.load(f"output/trained/norm_factor_params.npy")
 
-        fm_model_path = ("output/trained/fm_model.pt")
+    # if DATA_EVAL_USE_HEURISTIC:
+    if 0:
+        # need to get the point of highest score
+
+        norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
+
+        fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
 
         linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-        linear_weights[:, -2] += linear_weights[:, -1]
-        linear_weights = linear_weights[:, :-1]
-        norm_factors = norm_factors[:, :-1]
+        # linear_weights[:, -2] += linear_weights[:, -1]
+        # linear_weights = linear_weights[:, :-1]
+        # norm_factors = norm_factors[:, :-1]
 
         result = torch.from_numpy((result-norm_factors[0])/norm_factors[1]).float().to(DEVICE)
         scaled_evals = torch.multiply(result, linear_weights[None, :])#[0, :]
@@ -273,8 +275,8 @@ def main(args):
             together = np.concatenate([strain_feats, gwak_filtered[i]])
             heur_res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
             build_heur_model_evals.append(heur_res)
-            #gwak_filtered
-            #build_dataset_strain.append([pearson_, HSS, LSS])
+            # gwak_filtered
+            # build_dataset_strain.append([pearson_, HSS, LSS])
             build_data_gwak_features.append(scaled_evals[i][eval_strongest_loc])
             print(f"Computing heuristic test {i}/{len(data)}, SNR {SNRs[i]}" , end = '\r')
 
