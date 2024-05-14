@@ -1,8 +1,8 @@
 # Version of the code with which the data was generated
 PERIOD = 'O3b' # or O3b
 VERSION = PERIOD + 'v3' # _only_correlation
-STRAIN_START = 1257288867 # for O3b 1256655618
-STRAIN_STOP = 1257294706 # for O3b 1269363618
+STRAIN_START = 1256663958 # for O3b 1256655618
+STRAIN_STOP = 1256673192 # for O3b 1269363618
 DATA_LOCATION = f'output/{VERSION}/data'
 MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
