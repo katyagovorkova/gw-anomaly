@@ -15,6 +15,7 @@ from scipy.signal import welch
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (
+    VERSION,
     SAMPLE_RATE,
     FACTORS_NOT_USED_FOR_FM,
     SEGMENT_OVERLAP,
@@ -33,7 +34,7 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-        
+
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
@@ -72,7 +73,7 @@ def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
         if p < minval:
             minval = p
             shift_idx = shift
-        
+
     return minval, shift_idx
 
 def parse_strain(x):
@@ -81,7 +82,7 @@ def parse_strain(x):
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
     #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
-    return long_pearson, HSS, LSS   
+    return long_pearson, HSS, LSS
 
 def event_clustering(indices, scores, spacing, device):
     '''
@@ -171,7 +172,7 @@ def main(args):
 
 
     gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
-    norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+    norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
     # norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
     #     8.2891174e+02, 2.1687556e+03, 1.6633119e+02, 2.3331506e+02,
     #     2.1687556e+03, 6.6346790e+02, 9.0009998e+02, 2.1687556e+03,
@@ -181,7 +182,7 @@ def main(args):
     #     1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
     #     2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
 
-    fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+    fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
@@ -189,10 +190,10 @@ def main(args):
     linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
     bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
     #print(linear_weights.shape)
-    linear_weights[:, -2] += linear_weights[:, -1]
-    # removing pearson
-    linear_weights = linear_weights[:, :-1]
-    norm_factors = norm_factors[:, :-1]
+    # linear_weights[:, -2] += linear_weights[:, -1]
+    # # removing pearson
+    # linear_weights = linear_weights[:, :-1]
+    # norm_factors = norm_factors[:, :-1]
 
     mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
@@ -210,7 +211,7 @@ def main(args):
         data_reduction = 2
         data = data[:, :data.shape[1]//data_reduction]
         total_data_time = data.shape[1] // SAMPLE_RATE
-        
+
         reduced_len = (data.shape[1] // 1000) * 1000
         data = data[:, :reduced_len]
 
@@ -305,9 +306,9 @@ def main(args):
                 smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
-               
+
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
-                    
+
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
                     filtered_final_score = smoothed_scores.index_select(0, indices)
                     filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
@@ -315,7 +316,7 @@ def main(args):
                     indices_ = indices.detach().cpu().numpy()
 
                     # extract important timeslides with indices
-                    timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num, 
+                    timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num,
                                                         midpoints[indices_],
                                                         DEVICE, window_size=1024) # 0.25 seconds on either side
                                                                                 # so it should come out to desired 0.5
@@ -325,9 +326,9 @@ def main(args):
                     filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
                     filtered_final_score = filtered_final_score[edge_check_filter]
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
-                    
+
                     final_gwak_vals = filtered_final_scaled_evals
-                    heuristics_test = True
+                    heuristics_test = False
 
                     if heuristics_tests:
                         heuristic_inputs = []
@@ -419,17 +420,17 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    # histogram = np.zeros(1000)
-    # if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
-    #     np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
+    histogram = np.zeros(1000)
+    if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
+        np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
 
-    # gwak_histogram = np.zeros((11, 1000))
-    # if not os.path.exists(f"{args.save_evals_path}_timeslide_gwak_hist.npy"):
-    #     np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
+    gwak_histogram = np.zeros((11, 1000))
+    if not os.path.exists(f"{args.save_evals_path}_timeslide_gwak_hist.npy"):
+        np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
 
-    # heuristics_data = np.zeros((0, 7))
-    # if not os.path.exists(f"{args.save_evals_path}_heuristics_data.npy"):
-    #     np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristics_data)
+    heuristics_data = np.zeros((0, 7))
+    if not os.path.exists(f"{args.save_evals_path}_heuristics_data.npy"):
+        np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristics_data)
 
 
     folder_path = args.data_path
