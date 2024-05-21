@@ -818,7 +818,7 @@ def main(args):
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
         args.fm_model_path, map_location=GPU_NAME))
-    weight = (model.layer.weight.data.cpu().numpy()[0])
+    weight = np.concatenate(model.layer.weight.data.cpu().numpy()[0], np.array([0]))
     learned_dp_weights = weight[:]
 
     """

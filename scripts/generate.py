@@ -649,6 +649,10 @@ def main(args):
             if seglen < 3600:
                 continue
 
+            # a trick to not get into memory issue; let's do less glitches for O3b
+            if str(start) == '1258605337':
+                break
+
             full_path = f'./output/omicron/{start}_{stop}/'
 
             for j in range(seglen // 3600):

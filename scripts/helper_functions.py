@@ -12,7 +12,7 @@ from lalinference import BurstSineGaussian, BurstSineGaussianF
 
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from models import LSTM_AE_SPLIT, FAT, LinearModel
+from models import LSTM_AE_SPLIT, FAT, LinearModel, LSTM_AE_SPLIT_use_precomputed
 
 from config import (
     IFOS,
@@ -39,7 +39,7 @@ from config import (
     RETURN_INDIV_LOSSES,
     SCALE,
     MODEL,
-    BOTTLENECK, 
+    BOTTLENECK,
     FACTORS_NOT_USED_FOR_FM,
     SMOOTHING_KERNEL)
 
@@ -177,14 +177,20 @@ def stack_dict_into_numpy_segments(data_dict):
     return stacked_np
 
 
-def load_gwak_models(model_path, device, device_name):
+def load_gwak_models(model_path, device, device_name, load_precomputed_RNN=False, batch_size=None):
     loaded_models = {}
     for dpath in model_path:
         model_name = dpath.split("/")[-1].split(".")[0]
         if MODEL[model_name] == "lstm":
-            model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+            if load_precomputed_RNN:
+                model = LSTM_AE_SPLIT_use_precomputed(num_ifos=NUM_IFOS,
                                 num_timesteps=SEG_NUM_TIMESTEPS,
-                                BOTTLENECK=BOTTLENECK[model_name]).to(device)
+                                BOTTLENECK=BOTTLENECK[model_name], batch_size=batch_size).to(device)
+            else:
+                model = LSTM_AE_SPLIT(num_ifos=NUM_IFOS,
+                                    num_timesteps=SEG_NUM_TIMESTEPS,
+                                    BOTTLENECK=BOTTLENECK[model_name]).to(device)
+
         elif MODEL[model_name] == "dense":
             model = FAT(num_ifos=NUM_IFOS,
                         num_timesteps=SEG_NUM_TIMESTEPS,
@@ -193,7 +199,7 @@ def load_gwak_models(model_path, device, device_name):
         model.load_state_dict(torch.load(dpath, map_location=device_name))
         loaded_models[dpath] = model
 
-    return loaded_models 
+    return loaded_models
 
 
 def reduce_to_significance(data):
@@ -1009,10 +1015,11 @@ def split_into_segments(data,
     return result
 
 
-def split_into_segments_torch(data,
+def split_into_segments_torch_(data,
                               overlap=SEGMENT_OVERLAP,
                               seg_len=SEG_NUM_TIMESTEPS,
-                              device=None):
+                              device=None,
+                              for_timeslides=False):
     '''
     Function to slice up data into overlapping segments
     seg_len: length of resulting segments
@@ -1020,11 +1027,20 @@ def split_into_segments_torch(data,
 
     assuming that data is of shape (N_samples, 2, feature_len)
     '''
-    N_slices = (data.shape[2] - seg_len) // overlap
+    if for_timeslides:
+        N_slices = (data.shape[2] - seg_len) // overlap + overlap
+    else:
+        N_slices = (data.shape[2] - seg_len) // overlap
+
     data = data[:, :, :N_slices * overlap + seg_len]
     feature_length_full = data.shape[2]
     feature_length = (data.shape[2] // SEG_NUM_TIMESTEPS) * SEG_NUM_TIMESTEPS
+
+    # if for_timeslides:
+    #     N_slices_limited = (feature_length - seg_len) // overlap + overlap
+    # else:
     N_slices_limited = (feature_length - seg_len) // overlap
+
     n_batches = data.shape[0]
     n_detectors = data.shape[1]
 
@@ -1058,6 +1074,21 @@ def split_into_segments_torch(data,
 
     return result
 
+def split_into_segments_torch(data,
+                              overlap=SEGMENT_OVERLAP,
+                              seg_len=SEG_NUM_TIMESTEPS,
+                              device=None,
+                              for_timeslides=False):
+
+    print(f'Data shape before {data.shape}')
+
+    #batch, n_detec, data
+    if for_timeslides: data = torch.concat((data, data[:,:,:150]), axis=-1)
+    print(f'Data shape after {data.shape}')
+
+    return data.unfold(dimension=2,
+                       size=seg_len, # 200
+                       step=overlap).swapaxes(1, 2).float() # 50
 
 def pearson_computation(data,
                         device,
@@ -1157,28 +1188,13 @@ def far_to_metric(search_time, far_hist):
 
     return i * HISTOGRAM_BIN_DIVISION - HISTOGRAM_BIN_MIN
 
-def combine_freqcorr(x):
-    # x shape is (N, 16)
-    new = np.zeros((x.shape[0], 11))
-    jump = 0
-    for i in range(15):
-        if i % 3 != 2:
-            new[:, i-jump] = x[:, i]
-        else:
-            jump += 1
-            new[:, -1] += x[:, i]
-
-    #new[:, -1] = x[:, -1]
-
-    return new
-
 def process_linear_fm(data, fm_model_path, norm_factors_path, DEVICE):
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
         fm_model_path, map_location=GPU_NAME))
     weight = (model.layer.weight.data.cpu().numpy()[0])
     #learned_dp_weights = weight[:]
-    
+
 
     """
         Factors to keep for the FM
@@ -1203,16 +1219,16 @@ def process_linear_fm(data, fm_model_path, norm_factors_path, DEVICE):
     bias = model.layer.bias.data.cpu().numpy()[0]
     means, stds = np.load(norm_factors_path)
     data_ = np.delete(data, FACTORS_NOT_USED_FOR_FM, -1)
-    
+
 
     # smooth the data values
-    data_ = np.apply_along_axis(lambda m: np.convolve(m, 
+    data_ = np.apply_along_axis(lambda m: np.convolve(m,
         np.ones(int(SMOOTHING_KERNEL * 5/SEGMENT_OVERLAP))/int((SMOOTHING_KERNEL*5/SEGMENT_OVERLAP)), mode='same'),
             axis=-2,
             arr=data_)
-    
+
     data_unscaled = data_[:]
-    
+
     data_ = (data_ - means) / stds
 
     fm_vals = model(torch.from_numpy(
@@ -1220,7 +1236,136 @@ def process_linear_fm(data, fm_model_path, norm_factors_path, DEVICE):
 
     scaled_data = np.multiply(data_, weight)
 
-    return scaled_data, data_unscaled, fm_vals, [weight, bias] 
+    return scaled_data, data_unscaled, fm_vals, [weight, bias]
+
+from scipy.signal import welch
+from scipy.stats import pearsonr
+
+def shifted_pearson_heuristic(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
+    # works for one window at a time
+    Hs = H[H_start:H_end]
+    minval = 1
+    for shift in range(-maxshift, maxshift):
+        Ls = L[H_start+shift:H_end+shift]
+        #minval = min(pearsonr(Hs, Ls)[0], minval)
+        p = pearsonr(Hs, Ls)[0]
+        if p < minval:
+            minval = p
+            shift_idx = shift
+
+    return minval, shift_idx
+
+def compute_signal_strength(x):
+    psd = welch(x, axis=1)[1]
+    HLS = np.log(np.sum(psd[0]))
+    LLS = np.log(np.sum(psd[1]))
+    return (HLS+LLS)/2
+
+def compute_signal_strength_chop(x, y):
+    psd0 = welch(x)[1]
+    psd1 = welch(y)[1]
+    HLS = np.log(np.sum(psd0))
+    LLS = np.log(np.sum(psd1))
+    return (HLS+LLS)/2
+
+def make_split_idxs(duration, seglen=200, overlap=50):
+    top = seglen
+    splits = []
+    while top < duration:
+        splits.append([top-seglen, top])
+        top += overlap
+    return splits
+
+def parse_strain(x):
+    # take strain, compute the long sig strenght & pearson
+    # split it up, do the same thing for short
+    long_pearson, shift_idx = shifted_pearson_heuristic(x[0], x[1], 50, len(x[0])-50)
+    long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
+
+
+    split_idxs = make_split_idxs(len(x[0]))[1:-1] # cut out ends to shifting can happen there
+    short_pearsons = []
+    short_sig_strengths = []
+    for split in split_idxs:
+        start, end = split
+
+        pearson, shift_idx = shifted_pearson_heuristic(x[0], x[1], start, end)
+        sig_strength = compute_signal_strength_chop(x[0, start:end], x[1, start+shift_idx:end+shift_idx] )
+
+        short_pearsons.append(pearson)
+        short_sig_strengths.append(sig_strength)
+
+    short_pearsons = np.array(short_pearsons)
+    short_sig_strengths = np.array(short_sig_strengths)
+
+    return [long_sig_strength, long_pearson], [short_sig_strengths, short_pearsons]
+
+def combine_freqcorr(x):
+    # x shape is (N, 16)
+    new = np.zeros((x.shape[0], 11))
+    jump = 0
+    for i in range(15):
+        if i % 3 != 2:
+            new[:, i-jump] = x[:, i]
+        else:
+            jump += 1
+            new[:, -1] += x[:, i]
+
+    #new[:, -1] = x[:, -1]
+
+    return new
+
+def compute_required_pearson(strens, relation):
+    # relation is [:, 0] strengths, [:, 1] pearsons
+    required_pearsons = []
+    flag = False
+    if not isinstance(strens, np.ndarray) and not type(strens) is list :
+        strens = [strens]
+        flag = True
+    for stren in strens:
+        idx = np.searchsorted(relation[:, 0], stren)
+        if idx == len(relation[:, 0]):
+            required_pearsons.append(-1)
+        else:
+            required_pearsons.append(relation[idx, 1])
+    if flag:
+        return required_pearsons[0]
+    return required_pearsons
+
+def single_condition(required, actual, mult_bar=0.67, add_bar=0.1, debug=False):
+    if debug:
+        print(f"actual= {actual:.3f}, required={required:.3f}, mod required: {(required+add_bar) * mult_bar}")
+    return  actual < (required+add_bar) * mult_bar
+
+def iterated_condition(required, actual, failed_fraction=0.2, debug=False):
+    # does it pass?
+    failed_count = 0
+    for i in range(len(required)):
+        if not single_condition(required[i], actual[i], debug=debug):
+            failed_count += 1
+    if debug:
+        print(f"failed count, {failed_count}, len(required), {len(required)}")
+    return failed_count / len(required) < failed_fraction
+
+def pairwise_symmetry_condition(scores):
+    # does not include glitch feature
+    def functional(x, y):
+        #enforce  |x| >= |y|
+        x = abs(x)
+        y = abs(y)
+
+        if y > x:
+            x, y = y, x
+        # signal autoencoder feature shouldn't be significantly positive
+        return (x+2.5)/(y+2.5) - 1.8
+    passed = True
+    for pair in [[2, 3], [6, 7], [8, 9]]:
+        a, b = pair
+
+        if functional(scores[a], scores[b]) > 0:
+            passed = False
+
+    return passed
 
 def joint_heuristic_test(strain, gwak_features, short_relation, long_relation):
     long, short = parse_strain(strain)
