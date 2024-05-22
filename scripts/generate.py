@@ -648,8 +648,10 @@ def main(args):
             seglen = stop - start
             if seglen < 3600:
                 continue
-
-            full_path = f'./output/omicron/{start}_{stop}/'
+            if str(start) == '1258605337':
+                break
+            
+            full_path = f'/home/katya.govorkova/gw-anomaly/output/omicron/{start}_{stop}/'
 
             for j in range(seglen // 3600):
                 split_start, split_stop = j * 3600, (j + 1) * 3600
