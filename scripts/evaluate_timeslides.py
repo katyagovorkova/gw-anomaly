@@ -93,11 +93,14 @@ def event_clustering(indices, scores, spacing, device):
     clustered = []
     idxs = indices.detach().cpu().numpy()
     cluster = []
+    cluster_start = idxs[0]
     for i, elem in enumerate(idxs):
         # to move onto next cluster
         if i != 0:
             dist = elem - idxs[i-1]
-            if dist > spacing:
+            if len(cluster) == 0:
+                cluster_start = elem
+            if dist > spacing or elem - cluster_start > spacing:
                 #make a new cluster
                 clustered.append(cluster)
                 cluster = [] # and initiate a new one
@@ -160,9 +163,10 @@ def main(args):
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
-
+    MODELS_LOCATION = "/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/models/"
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+    print(166, model_path)
     gwak_models = load_gwak_models(model_path, DEVICE, f'cuda:{args.gpu}')
 
     orig_kernel = 50
@@ -172,33 +176,21 @@ def main(args):
 
 
     gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
-    norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
-    # norm_factors = np.array([[1.4951140e+03, 1.0104435e+03, 2.1687556e+03, 6.4572485e+02,
-    #     8.2891174e+02, 2.1687556e+03, 1.6633119e+02, 2.3331506e+02,
-    #     2.1687556e+03, 6.6346790e+02, 9.0009998e+02, 2.1687556e+03,
-    #     3.3232565e+02, 4.5468460e+02, 2.1687556e+03, 1.8892123e-01],
-    #    [5.0531479e+02, 4.4439362e+02, 1.1223564e+03, 4.8320212e+02,
-    #     5.7444623e+02, 1.1223564e+03, 2.8041806e+02, 3.8093832e+02,
-    #     1.1223564e+03, 4.3112857e+02, 6.1296509e+02, 1.1223564e+03,
-    #     2.1180432e+02, 3.0003491e+02, 1.1223564e+03, 3.8881097e-02]])
-
-    fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
+    norm_factors = np.load(f"/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/norm_factor_params.npy")
+    fm_model_path = (f"/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/fm_model.pt")
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
 
-    linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-    bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-    #print(linear_weights.shape)
-    # linear_weights[:, -2] += linear_weights[:, -1]
-    # # removing pearson
-    # linear_weights = linear_weights[:, :-1]
-    # norm_factors = norm_factors[:, :-1]
+    linear_weights = fm_model.layer.weight.detach()
+    bias_value = fm_model.layer.bias.detach()
 
-    mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
-    std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+    mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)
+    std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)
 
     roll_amount = SEG_NUM_TIMESTEPS // SEGMENT_OVERLAP
+    
+
     ts = time.time()
     not_finished = True
     initial_roll = 0
@@ -231,7 +223,10 @@ def main(args):
         clipped_time_axis = (data.shape[2] // SEGMENT_OVERLAP) * SEGMENT_OVERLAP
         data = data[:, :, :clipped_time_axis]
 
-        segments = split_into_segments_torch(data, for_timeslides=True)
+        data = data.to(DEVICE).float()
+
+        #segments = split_into_segments_torch(data, for_timeslides=True)
+        segments = split_into_segments_torch(data)
         #print(f'segment before norm shape: {segments.shape}')
         segments_normalized = std_normalizer_torch(segments)
         #print(f'segment norm shape: {segments_normalized.shape}')
@@ -294,7 +289,7 @@ def main(args):
             save_full_timeslide_readout = True
             if save_full_timeslide_readout:
 
-                FAR_2days = 2 # lowest FAR bin we want to worry about
+                FAR_2days = -3 # lowest FAR bin we want to worry about
 
                 # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
                 final_values_slx = (final_values - mean_norm)/std_norm
@@ -306,15 +301,16 @@ def main(args):
                 smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
-
+                print(301, indices)
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
-
+                    print("got", len(indices), "events")
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
+                    print(305, len(indices))
                     filtered_final_score = smoothed_scores.index_select(0, indices)
                     filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
                     indices_ = indices.detach().cpu().numpy()
-
+                    print(309, indices_)
                     # extract important timeslides with indices
                     timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num,
                                                         midpoints[indices_],
@@ -337,11 +333,8 @@ def main(args):
                         for i, strain_segment in enumerate(timeslide_chunks):
                             strain_feats = parse_strain(strain_segment)
                             together = np.concatenate([strain_feats, gwak_filtered[i]])
-                            #print("together", together)
                             together = np.concatenate([together, filtered_final_score[i]])
                             heuristic_inputs.append(together)
-                            #res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
-                            #passed_heuristics.append(res<0.46)
                         heuristic_inputs = np.array(heuristic_inputs)
                         
                         # append it onto the save file
@@ -350,14 +343,6 @@ def main(args):
                         #print("accumulated save:", heuristic_save.shape, heuristic_save[-1])
                         np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristic_save)
 
-
-
-                        #print("heuristics:", np.array(passed_heuristics).sum(), "/", len(passed_heuristics))
-                
-                        #filtered_final_score = filtered_final_score[passed_heuristics]
-                        #final_gwak_vals = filtered_final_scaled_evals[passed_heuristics]
-                    
-                
                     if len(filtered_final_score) > 0:
                         final_gwak_vals = combine_freqcorr(final_gwak_vals)
                         #print("final score", filtered_final_score)
@@ -368,8 +353,6 @@ def main(args):
                         #print("340", gwak_histogram.shape, final_gwak_vals.shape)
                         for k in range(11):
                             computed_gwak_hist = np.histogram(final_gwak_vals[:, k], bins=1000, range=(-20, 20))[0]
-                            #print(computed_gwak_hist.shape, gwak_histogram[:, k].shape)
-                            #print(computed_gwak_hist.shape)
                             gwak_histogram[k,:]  = gwak_histogram[k, :] + computed_gwak_hist
                         
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
@@ -419,9 +402,10 @@ if __name__ == '__main__':
                         help='Where to save evals')
 
     args = parser.parse_args()
-
+    print(414, args.save_evals_path)
     histogram = np.zeros(1000)
     if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
+        print(417, "got here", f"{args.save_evals_path}_timeslide_hist.npy")
         np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
 
     gwak_histogram = np.zeros((11, 1000))

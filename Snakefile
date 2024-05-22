@@ -48,7 +48,7 @@ rule find_valid_segments:
 
 rule run_omicron:
     params:
-        user_name = 'katya.govorkova',
+        user_name = 'ryan.raikman',
         folder = f'output/omicron/',
         intersections = f'output/{PERIOD}_intersections.npy'
     shell:
