@@ -127,13 +127,11 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
     edge_check_passed = []
 
     fill_strains = np.zeros((len(important_points), 2, window_size*2))
-    #print("126", fill_strains.shape)
     for idx, point in enumerate(important_points):
         # check that the point is not on the edge
         condition = point > window_size*2 and point < timeslide_len - window_size*2
         edge_check_passed.append(condition)
         if condition:
-            #print("131", point-window_size, point+window_size, strain_data[0].shape)
             H_selection = strain_data[0, point-window_size:point+window_size]
 
             # if the livingston points overflow, the modulo should bring them
@@ -141,7 +139,6 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
             # which is divisible by 200, so it should work
             L_start = (point-window_size+L_shift) % timeslide_len
             L_end = (point+window_size+L_shift) % timeslide_len
-            #print("140", L_start, L_end)
             #ENDFLAG = 0
             if L_end < L_start:
                 L_selection = np.zeros((2048,))
@@ -159,14 +156,12 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
 
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
-    #print(args.gpu)
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
 
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
-    print(166, model_path)
     gwak_models = load_gwak_models(model_path, DEVICE, f'cuda:{args.gpu}')
 
     orig_kernel = 50
@@ -402,10 +397,8 @@ if __name__ == '__main__':
                         help='Where to save evals')
 
     args = parser.parse_args()
-    print(414, args.save_evals_path)
     histogram = np.zeros(1000)
     if not os.path.exists(f"{args.save_evals_path}_timeslide_hist.npy"):
-        print(417, "got here", f"{args.save_evals_path}_timeslide_hist.npy")
         np.save(f"{args.save_evals_path}_timeslide_hist.npy", histogram)
 
     gwak_histogram = np.zeros((11, 1000))
@@ -418,7 +411,6 @@ if __name__ == '__main__':
 
 
     folder_path = args.data_path
-    print(folder_path)
     #p = np.random.permutation(len(os.listdir(folder_path)))
 
     print("N files", args.files_to_eval)
