@@ -349,6 +349,7 @@ def main(args):
                         for k in range(11):
                             computed_gwak_hist = np.histogram(final_gwak_vals[:, k], bins=1000, range=(-20, 20))[0]
                             gwak_histogram[k,:]  = gwak_histogram[k, :] + computed_gwak_hist
+                        np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
                         
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
             if computed_hist is not None:
