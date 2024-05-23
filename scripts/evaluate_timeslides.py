@@ -370,6 +370,7 @@ def main(args):
                             #print(computed_gwak_hist.shape, gwak_histogram[:, k].shape)
                             #print(computed_gwak_hist.shape)
                             gwak_histogram[k,:]  = gwak_histogram[k, :] + computed_gwak_hist
+                        np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
                         
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
             if computed_hist is not None:

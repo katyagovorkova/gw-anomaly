@@ -16,7 +16,7 @@ class LinearModel(nn.Module):
 
     def __init__(self, n_dims):
         super(LinearModel, self).__init__()
-        self.layer = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM)-1, 1)
+        self.layer = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM), 1)
 
         if '_non_linear_bbh_only' in VERSION:
 

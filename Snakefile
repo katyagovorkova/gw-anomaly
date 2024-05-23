@@ -77,8 +77,8 @@ rule fetch_timeslide_data:
     # 1253977218 -- 1 oct 2019
     """
     params:
-        start = {TIMESLIDES_START},
-        stop = {TIMESLIDES_STOP}
+        start = 1256663958,
+        stop = 1257663958
     shell:
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
