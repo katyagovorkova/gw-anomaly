@@ -648,7 +648,7 @@ def main(args):
             seglen = stop - start
             if seglen < 3600:
                 continue
-
+            
             full_path = f'./output/omicron/{start}_{stop}/'
 
             for j in range(seglen // 3600):

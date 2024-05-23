@@ -195,10 +195,10 @@ rule generate_timeslides_for_fm:
         data_path = expand('{datalocation}/{dataclass}.npz',
             dataclass='timeslides',
             datalocation=DATA_LOCATION),
-    params:
         model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
+    params:
         from_saved_models = False,
         shorten_timeslides = True,
     output:
@@ -209,7 +209,7 @@ rule generate_timeslides_for_fm:
         'mkdir -p {output.save_path}; '
         'mkdir -p {output.save_evals_path}; '
         'mkdir -p {output.save_normalizations_path}; '
-        'python3 scripts/compute_far.py {output.save_path} {params.model_path} {params.from_saved_models} \
+        'python3 scripts/compute_far.py {output.save_path} {input.model_path} {params.from_saved_models} \
             --data-path {input.data_path} \
             --save-evals-path {output.save_evals_path} \
             --save-normalizations-path {output.save_normalizations_path} \
