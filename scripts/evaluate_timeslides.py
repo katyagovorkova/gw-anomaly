@@ -24,7 +24,7 @@ from config import (
     #GPU_NAME
     )
 #device_str = GPU_NAME
-heuristics_tests = False
+heuristics_tests = True
 import torch.nn as nn
 class BasedModel(nn.Module):
     def __init__(self):
