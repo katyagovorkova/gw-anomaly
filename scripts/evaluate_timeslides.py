@@ -163,7 +163,7 @@ def main(args):
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
-    MODELS_LOCATION = "/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/models/"
+
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
     print(166, model_path)
@@ -176,8 +176,8 @@ def main(args):
 
 
     gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
-    norm_factors = np.load(f"/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/norm_factor_params.npy")
-    fm_model_path = (f"/home/katya.govorkova/gw-anomaly/output/O3bv3/trained/fm_model.pt")
+    norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
+    fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
