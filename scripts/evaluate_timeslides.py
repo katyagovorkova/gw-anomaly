@@ -301,16 +301,16 @@ def main(args):
                 smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
                     kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
-                print(301, indices)
+
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
-                    print("got", len(indices), "events")
+
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
-                    print(305, len(indices))
+
                     filtered_final_score = smoothed_scores.index_select(0, indices)
                     filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
                     indices_ = indices.detach().cpu().numpy()
-                    print(309, indices_)
+
                     # extract important timeslides with indices
                     timeslide_chunks, edge_check_filter = extract_chunks(strain_data, timeslide_num,
                                                         midpoints[indices_],
@@ -324,7 +324,7 @@ def main(args):
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
 
                     final_gwak_vals = filtered_final_scaled_evals
-                    heuristics_test = False
+                    heuristics_test = True
 
                     if heuristics_tests:
                         heuristic_inputs = []
