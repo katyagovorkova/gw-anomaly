@@ -922,7 +922,7 @@ def main(args):
 
 
         if do_heuristic_efficiency:
-            fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+            fm_model_path = (f"/output/{VERSION}/trained/fm_model.pt")
             fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
             fm_model.load_state_dict(torch.load(
                 fm_model_path, map_location=GPU_NAME))
