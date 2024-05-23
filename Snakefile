@@ -41,15 +41,16 @@ rule find_valid_segments:
     input:
         hanford_path = 'data/{period}_Hanford_segments.json',
         livingston_path = 'data/{period}_Livingston_segments.json'
-    params:
+    output:
         save_path = 'output/{period}_intersections.npy'
     script:
         'scripts/segments_intersection.py'
 
 rule run_omicron:
     params:
-        user_name = 'katya.govorkova',
-        folder = f'output/omicron/'
+        user_name = 'ryan.raikman',
+        folder = f'output/omicron/',
+        intersections = f'output/{PERIOD}_intersections.npy'
     shell:
         'mkdir -p {params.folder}; '
         'ligo-proxy-init {params.user_name}; '
@@ -58,7 +59,7 @@ rule run_omicron:
 rule fetch_site_data:
     input:
         omicron = rules.run_omicron.params.folder,
-        intersections = expand(rules.find_valid_segments.params.save_path,
+        intersections = expand(rules.find_valid_segments.output.save_path,
             period=PERIOD)
     output:
         'tmp/dummy_{version}_{site}.txt'
@@ -69,21 +70,22 @@ rule fetch_site_data:
 
 rule fetch_timeslide_data:
     """
+    O3a
     # 1238166018 -- 1 april 2019
     # 1243382418 -- 1 june 2019
     # 1248652818 -- 1 august 2019
     # 1253977218 -- 1 oct 2019
     """
     params:
-        start = 1256663958,
-        stop = 1257663958
+        start = {TIMESLIDES_START},
+        stop = {TIMESLIDES_STOP}
     shell:
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
 rule generate_data:
     input:
         omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
-        intersections = expand(rules.find_valid_segments.params.save_path,
+        intersections = expand(rules.find_valid_segments.output.save_path,
             period=PERIOD),
     params:
         dependencies = expand(rules.fetch_site_data.output,
@@ -155,7 +157,7 @@ rule all_timeslides_for_far:
         expand(rules.generate_timeslides_for_far.output,
             id=range(4),
             files_to_eval=-1,
-            timeslide_total_duration=10044) # 3.156e+8/800/4/3
+            timeslide_total_duration=9460800) # 3600*24*365*1.2/4
 
 rule evaluate_signals:
     input:
@@ -189,25 +191,26 @@ rule plot_cut_efficiency:
                     {params.generated_data_file}'
 
 rule generate_timeslides_for_fm:
+    input:
+        data_path = expand('{datalocation}/{dataclass}.npz',
+            dataclass='timeslides',
+            datalocation=DATA_LOCATION),
     params:
         model_path = expand(rules.train_gwak.output.model_file,
             dataclass=modelclasses,
             version=VERSION),
         from_saved_models = False,
-        data_path = expand('{datalocation}/{dataclass}.npz',
-            dataclass='timeslides',
-            datalocation=DATA_LOCATION),
         shorten_timeslides = True,
-        save_path = f'output/{VERSION}/timeslides/',
     output:
+        save_path = directory(f'output/{VERSION}/timeslides/'),
         save_evals_path = directory(f'output/{VERSION}/timeslides/evals/'),
         save_normalizations_path = directory(f'output/{VERSION}/timeslides/normalization/'),
     shell:
-        'mkdir -p {params.save_path}; '
+        'mkdir -p {output.save_path}; '
         'mkdir -p {output.save_evals_path}; '
         'mkdir -p {output.save_normalizations_path}; '
-        'python3 scripts/compute_far.py {params.save_path} {params.model_path} {params.from_saved_models} \
-            --data-path {params.data_path} \
+        'python3 scripts/compute_far.py {output.save_path} {params.model_path} {params.from_saved_models} \
+            --data-path {input.data_path} \
             --save-evals-path {output.save_evals_path} \
             --save-normalizations-path {output.save_normalizations_path} \
             --fm-shortened-timeslides {params.shorten_timeslides} '
@@ -310,9 +313,9 @@ rule plot_results:
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=fm_training_classes,
                 version=VERSION)],
-        fm_model_path = '/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt'
+        fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
     params:
-        evaluation_dir = '/home/katya.govorkova/gwak-paper-final-models/',
+        evaluation_dir = f'output/{VERSION}/',
         save_path = directory(f'output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '

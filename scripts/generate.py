@@ -389,8 +389,12 @@ def generate_glitches(
     if 'H1' not in loaded_data.keys() or 'L1' not in loaded_data.keys():
         return 'empty'
 
-    detector_data = np.vstack(
+    try:
+        detector_data = np.vstack(
         [loaded_data['H1']['data'], loaded_data['L1']['data']])
+    # if the L1 and H1 have different shape!
+    except:
+        return 'empty'
 
     N = n_glitches
     loud_times_H1 = get_loud_segments(loaded_data['H1'], N, segment_length)
@@ -635,41 +639,36 @@ def main(args):
 
     elif args.stype == 'glitches':
 
-        # we are using O3a glitches for O3b
-        if args.period == 'O3b':
-            training_data = np.load('/home/katya.govorkova/gwak/v2/data/glitches.npz')['data']
-            training_data = dict(data=training_data)
+        segments = np.load(args.intersections)
+        datums = []
 
-        else:
-            segments = np.load(args.intersections)
-            datums = []
 
-            for segment in segments:
-                start, stop = segment[0], segment[1]
-                seglen = stop - start
-                if seglen < 3600:
+        for segment in segments:
+            start, stop = segment[0], segment[1]
+            seglen = stop - start
+            if seglen < 3600:
+                continue
+
+            full_path = f'./output/omicron/{start}_{stop}/'
+
+            for j in range(seglen // 3600):
+                split_start, split_stop = j * 3600, (j + 1) * 3600
+                j_args = argparse.Namespace(
+                    folder_path=full_path,
+                    save_file=f'{full_path}/glitch.npy',
+                    stype='glitch',
+                    start=split_start,
+                    stop=split_stop)
+
+                datum = main(j_args)
+                if datum == 'empty':
                     continue
 
-                full_path = f'./output/omicron/{start}_{stop}/'
+                datums.append(datum)
 
-                for j in range(seglen // 3600):
-                    split_start, split_stop = j * 3600, (j + 1) * 3600
-                    j_args = argparse.Namespace(
-                        folder_path=full_path,
-                        save_file=f'{full_path}/glitch.npy',
-                        stype='glitch',
-                        start=split_start,
-                        stop=split_stop)
-
-                    datum = main(j_args)
-                    if datum == 'empty':
-                        continue
-
-                    datums.append(datum)
-
-            training_data = np.concatenate(datums, axis=0)
-            print(f'Total glitch shape is {training_data.shape}')
-            training_data = dict(data=training_data)
+        training_data = np.concatenate(datums, axis=0)
+        print(f'Total glitch shape is {training_data.shape}')
+        training_data = dict(data=training_data)
 
     elif args.stype == 'timeslides':
         event_times_path = 'data/LIGO_EVENT_TIMES.npy'
@@ -718,7 +717,7 @@ def main(args):
                                                    SNR=sampler,
                                                    return_injection_snr=True,
                                                    return_scales=True)
-        sampled_hrss *= scales
+        # sampled_hrss *= scales
         training_data = sg_injections.swapaxes(0, 1)
         training_data = dict(data=training_data)
 

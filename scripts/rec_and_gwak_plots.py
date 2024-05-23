@@ -394,8 +394,8 @@ def main(args):
     model_paths = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
-    fm_model_path = args.fm_model_path if not args.from_saved_fm_model else \
-        os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
+    fm_model_path = args.fm_model_path  # if not args.from_saved_fm_model else \
+        # os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
 
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
@@ -404,10 +404,10 @@ def main(args):
     weights = []
     for i in range(5):
         arr = np.zeros(weight.shape)
-        arr[3 * i] = weight[3 * i]
-        arr[3 * i + 1] = weight[3 * i + 1]
-        arr[3 * i + 3] = weight[3 * i + 3]
-        weights.append(arr[:-1])  # cut out pearson
+        arr[2 * i] = weight[2 * i]
+        arr[2 * i + 1] = weight[2 * i + 1]
+        arr[2 * i + 3] = weight[2 * i + 3]
+        weights.append(arr)  # cut out pearson
 
     loss_values_SNR = dict()
     loss_values = dict()

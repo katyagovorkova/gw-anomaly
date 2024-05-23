@@ -70,16 +70,16 @@ def main(args):
     '''
     signal_evals = []
     midp_map = {
-        'bbh_fm_optimization_evals.npy': 1440,
-        'sglf_fm_optimization_evals.npy': 1440,
-        'sghf_fm_optimization_evals.npy': 1440,
-        'wnbhf_fm_optimization_evals.npy': 1850,
-        'wnblf_fm_optimization_evals.npy': 1850,
-        'supernova_fm_optimization_evals.npy': 2150}
+        'bbh_fm_optimization_evals.npy': 1440//10,
+        'sglf_fm_optimization_evals.npy': 1440//10,
+        'sghf_fm_optimization_evals.npy': 1440//10,
+        'wnbhf_fm_optimization_evals.npy': 1850//10,
+        'wnblf_fm_optimization_evals.npy': 1850//10,
+        'supernova_fm_optimization_evals.npy': 2150//10}
 
     for file_name in args.signal_path:
         mid = midp_map[file_name.split("/")[-1]]
-        signal_evals.append(np.load(f'{file_name}')[:, mid - 150:mid + 150, :])
+        signal_evals.append(np.load(f'{file_name}')[:, mid - 150//10:mid + 150//10, :])
 
     signal_evals = np.concatenate(signal_evals, axis=0)
     # signal_evals = np.delete(signal_evals, FACTORS_NOT_USED_FOR_FM, -1)
