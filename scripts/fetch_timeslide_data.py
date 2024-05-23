@@ -79,7 +79,7 @@ def main(args):
     except FileExistsError:
         None
 
-    valid_segments = np.load("output/O3b_intersections.npy")
+    valid_segments = np.load(f"output/{VERSION}_intersections.npy")
 
     for seg in valid_segments:
             a, b = seg
