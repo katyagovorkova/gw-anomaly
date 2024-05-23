@@ -79,7 +79,10 @@ rule fetch_timeslide_data:
     params:
         start = {TIMESLIDES_START},
         stop = {TIMESLIDES_STOP}
+    output:
+        f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}'
     shell:
+        'mkdir -p {output}; '
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
 rule generate_data:
@@ -137,6 +140,7 @@ rule generate_timeslides_for_far:
             dataclass=modelclasses,
             version=VERSION),
         data_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
+        dependecy = rules.fetch_timeslide_data.output
     params:
         from_saved_models = False,
     output:
