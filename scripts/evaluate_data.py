@@ -220,8 +220,8 @@ def main(args):
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path))
 
-    # if DATA_EVAL_USE_HEURISTIC:
-    if 0:
+    data_eval_use_heuristic = False
+    if data_eval_use_heuristic:
         # need to get the point of highest score
 
         norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")

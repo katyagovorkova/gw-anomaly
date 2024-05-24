@@ -36,10 +36,15 @@ class BasedModel(nn.Module):
     def forward(self, x):
         x1 = self.activation(self.layer1(x[:, :3]))
         x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
-        x2_2 = self.activation(self.layer2_1(x[:, 4:5]))
-        x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
+        x2_2 = self.activation(self.layer2_2(x[:, 4:5]))
+        x2_3 = self.activation(self.layer2_3(x[:, 5:6]))
         return x1 * x2_1 * x2_2 * x2_3
 
+
+# TODO: reconfigure the path
+# this is the folder which contains the necessary training data, i.e. the signal evaluations with heuristics   
+# it should be written to by the function in       process_heuristic_training_data.py
+# as well as the function to evaluate the signals in      evaluate_data.py  (this is described as process_heuristic_training_data.py)
 data_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/O3av2/evaluated/heuristic/"
 
 def extract(gwak_values):
@@ -130,9 +135,14 @@ sig_data = sig_data[:sig_val_cut]
 bkg_data = bkg_data[:bkg_val_cut]
 print("train", sig_data.shape, bkg_data.shape, "val", sig_data_val.shape, bkg_data_val.shape)
 
+
+# TURN THIS TO FALSE WHEN YOU WANT TO TRAIN A NEW MODEL (this exists so evaluating the model performance can be done without retraining each time)
 saved_model = True
 #model = HeuristicModel().to(device)
 model = BasedModel().to(device)
+
+
+# TODO: reconfigure this path (where the model lives) to behave nicely with snakemake
 model_save_path = "output/plots/model.h5"
 if saved_model:
     model.load_state_dict(torch.load(model_save_path))
