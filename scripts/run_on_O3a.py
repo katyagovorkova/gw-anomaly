@@ -275,7 +275,30 @@ def whiten_bandpass_resample(
     except:
         return None, None
 
-def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
+def whiten_bandpass_resample_new_order(
+        start_point,
+        end_point,
+        sample_rate=SAMPLE_RATE,
+        bandpass_low=BANDPASS_LOW,
+        bandpass_high=BANDPASS_HIGH,
+        shift=None):
+
+    device = torch.device(GPU_NAME)
+
+    start_point, end_point = int(start_point)+10, int(end_point)-10
+    strainL1_0 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
+    strainH1_0 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
+
+
+    t0 = int(strainL1.t0 / u.s)
+
+    strainL1 = strainL1_0.bandpass(bandpass_low, bandpass_high).resample(sample_rate).whiten()
+    strainH1 = strainH1_0.bandpass(bandpass_low, bandpass_high).resample(sample_rate).whiten()
+
+    return strainH1, strainL1, strainH1_0, strainL1_0
+
+
+def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, neworder_clean=None, neworder_raw=None):
     #model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
     model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
     model_heuristic = BasedModel().to(DEVICE)
@@ -307,6 +330,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                     "output/O3av2/trained/models/background.pt",
                         "output/O3av2/trained/models/glitches.pt"]
 
+        MODELS_LOCATION = "/home/katya.govorkova/gwak-paper-final-models/trained/models/"
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         orig_kernel = 50
@@ -319,7 +343,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = ("/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -469,21 +493,21 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 t0 = H_strain.t0.value
                 dt = H_strain.dt.value
 
-                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
-                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
+                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
+                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
                 f = np.array(H_hq.yindex)
                 t = np.array(H_hq.xindex)
                 #t=strain_ts *1000
                 t -= t[0]
 
-                im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T)
+                im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T, vmax = 25, vmin = 0)
                 fig.colorbar(im_H, ax=axs[0, 1], label = "spectral power")
                 axs[0, 1].set_yscale("log")
                 axs[0, 1].set_xlabel("Time (ms)")
                 axs[0, 1].set_ylabel("Freq (Hz)")
                 axs[0, 1].set_title("Hanford Q-Transform")
 
-                im_L  = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
+                im_L  = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T, vmax = 25, vmin = 0)
                 fig.colorbar(im_L, ax=axs[1, 1], label = "spectral power")
                 axs[1, 1].set_yscale("log")
                 axs[1, 1].set_xlabel("Time (ms)")
@@ -553,6 +577,21 @@ def main(args):
     valid_segments = np.load("/home/katya.govorkova/gw-anomaly/output/O3a_intersections.npy")
     #trained_path = "/n/home00/emoreno/gw-anomaly/output/gwak-paper-final-models/" # fix hardcoding later
     trained_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/gwak-paper-final-models/"
+
+    do_only_anomaly = True
+    if do_only_anomaly:
+        anomaly_start_times = [1243303084, 1240875861]
+        for A in anomaly_start_times:
+            B = A + 3600
+            H, L = whiten_bandpass_resample(A, B)
+            
+            Hclean, Lclean, Hraw, Lraw = whiten_bandpass_resample_new_order(A, B)
+            data = np.vstack([np.array(H.data), np.array(L.data)])
+
+            get_evals(data, trained_path, args.savedir, int(A), [Hclean, Lclean])
+
+        return None
+
     run_short_test = False
     if run_short_test:
         # testing code
@@ -585,9 +624,10 @@ def main(args):
         A = B-3600
 
         H, L = whiten_bandpass_resample(A, B)
+        Hclean, Lclean, Hraw, Lraw = whiten_bandpass_resample_new_order(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
 
-        get_evals(data, trained_path, args.savedir, int(A), [H, L])
+        get_evals(data, trained_path, args.savedir, int(A), [Hclean, Lclean], clean = )
         assert 0
 
     f_segments = 'output/done_O3a_segments.npy'
