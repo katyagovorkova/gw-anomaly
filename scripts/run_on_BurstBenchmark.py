@@ -66,13 +66,11 @@ def whiten_bandpass_resample(
         strainL1[:shift_datapoints] = temp
     
     # Whiten, bandpass, and resample
-    strainL1 = strainL1.resample(sample_rate)
     strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    #strainL1 = strainL1.resample(sample_rate)
+    strainL1 = strainL1.resample(sample_rate)
 
-    strainH1 = strainH1.resample(sample_rate)  
     strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-    #strainH1 = strainH1.resample(sample_rate)  
+    strainH1 = strainH1.resample(sample_rate)
 
     return [strainH1, strainL1], start_point
 
@@ -456,8 +454,8 @@ def IGNORE_main(args):
         A, B = None,  None
         target = 1249852257.0
         target = 1245955943.1
-        target = 1249852257.0	
-        target = 1242459857.4	
+        target = 1249852257.0   
+        target = 1242459857.4   
         low, high = valid_segments[0][0], valid_segments[-1][1]
         #print(target-low, high-target)
         for seg in valid_segments:

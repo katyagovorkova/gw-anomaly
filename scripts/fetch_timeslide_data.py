@@ -24,7 +24,7 @@ DEVICE = torch.device(GPU_NAME)
 def whiten_bandpass_resample_clean(
         start_point,
         end_point,
-        event_times_path = "data/LIGO_EVENT_TIMES.npy",
+        event_times_path='data/LIGO_EVENT_TIMES.npy',
         sample_rate=SAMPLE_RATE,
         bandpass_low=BANDPASS_LOW,
         bandpass_high=BANDPASS_HIGH):
@@ -35,22 +35,22 @@ def whiten_bandpass_resample_clean(
     strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
 
     # Whiten, bandpass, and resample
-    strainL1 = strainL1.resample(sample_rate)
     strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.resample(sample_rate)
+    strainL1 = strainL1.resample(sample_rate)
     strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
+    strainH1 = strainH1.resample(sample_rate)
 
     data = np.stack([strainH1, strainL1])
 
     event_times = np.load(event_times_path)
     # automatically chops off the first and last 10 seconds, even with no BBH
-
     data_cleaned = clean_gw_events(event_times,
                                    data,
                                    start_point,
                                    end_point)
 
     return data_cleaned
+
 
 def make_eval_chunks(a, b, dur):
     '''
@@ -68,7 +68,9 @@ def make_eval_chunks(a, b, dur):
 
     # ending chunk, but still make it one hour
     out.append([str(b-dur), str(b)])
+
     return out
+
 
 def main(args):
 
@@ -79,7 +81,7 @@ def main(args):
     except FileExistsError:
         None
 
-    valid_segments = np.load(f"output/{VERSION}_intersections.npy")
+    valid_segments = np.load(f'output/{VERSION}_intersections.npy')
 
     for seg in valid_segments:
             a, b = seg
@@ -87,15 +89,14 @@ def main(args):
                 chunks = make_eval_chunks(a, b, 3600)
                 for A, B in chunks:
                      A, B = int(A), int(B)
-                     #print(A, B)
+
                      if args.start < A and B < args.end:
-                        print(A, B)
+
                         try:
                             data_cleaned = whiten_bandpass_resample_clean(A, B)
                             np.save(f"{save_path}/{A}_{B}.npy", np.array(data_cleaned))
                         except:
                             continue
-
 
 
 if __name__ == "__main__":
