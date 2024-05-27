@@ -435,11 +435,11 @@ def whiten_bandpass_bkgs(
                 # On attempting to bandpass with Nyquist frequency, an
                 # error is thrown. This was only the BANDPASS_LOW is used
                 # with a highpass filter
-                white_seg = TimeSeries(bkg_seg, sample_rate=sample_rate).whiten(
-                    asd=ASDs[ifo]).highpass(BANDPASS_LOW)
+                white_seg = TimeSeries(bkg_seg, sample_rate=sample_rate).highpass(BANDPASS_LOW).whiten(
+                    asd=ASDs[ifo])
             else:
-                white_seg = TimeSeries(bkg_seg, sample_rate=sample_rate).whiten(
-                    asd=ASDs[ifo]).bandpass(BANDPASS_LOW, BANDPASS_HIGH)
+                white_seg = TimeSeries(bkg_seg, sample_rate=sample_rate).bandpass(
+                    BANDPASS_LOW, BANDPASS_HIGH).whiten(asd=ASDs[ifo])
             white_segs[j] = clipping(
                 white_seg, sample_rate, clip_edge=clip_edge)
         all_white_segs.append(white_segs)

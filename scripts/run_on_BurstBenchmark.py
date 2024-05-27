@@ -66,11 +66,11 @@ def whiten_bandpass_resample(
         strainL1[:shift_datapoints] = temp
     
     # Whiten, bandpass, and resample
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainL1 = strainL1.resample(sample_rate)
+    strainL1 = strainL1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1.whiten()
 
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.resample(sample_rate)
+    strainH1 = strainH1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainH1 = strainH1.whiten()
 
     return [strainH1, strainL1], start_point
 

@@ -35,10 +35,10 @@ def whiten_bandpass_resample_clean(
     strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point) #.get, verbose,,, .find
 
     # Whiten, bandpass, and resample
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainL1 = strainL1.resample(sample_rate)
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.resample(sample_rate)
+    strainL1 = strainL1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1.whiten()
+    strainH1 = strainH1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainH1 = strainH1.whiten()
 
     data = np.stack([strainH1, strainL1])
 
