@@ -3,13 +3,16 @@ PERIOD = 'O3' # or O3b
 VERSION = PERIOD + 'v0' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256655618
 STRAIN_STOP = 1238170289  # for O3b 1269363618
+# If you want to use specific version of data or models, specify the path here
+# and in the Snakefile turn on a flag that says use_trained_models
 DATA_LOCATION = f'output/{VERSION}/data'
 MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
 
 # GPU
 GPU_NAME = 'cuda:0'
-# data generation
+
+# Data generation
 IFOS = ['H1', 'L1']
 SAMPLE_RATE = 4096
 BANDPASS_LOW = 30
@@ -30,7 +33,7 @@ SMOOTHING_KERNEL = 50
 SMOOTHING_KERNEL_SIZES = [1, 10, 50, 100]
 DATA_EVAL_MAX_BATCH = 100
 
-# data sampling arguments
+# Data sampling arguments
 BBH_WINDOW_LEFT = -0.08
 BBH_WINDOW_RIGHT = 0.01
 BBH_AMPLITUDE_BAR = 5
@@ -65,7 +68,7 @@ FRAME_TYPE = 'HOFT_C01'
 GLITCH_SAMPLE_RATE = 1024
 STATE_FLAG = 'DCS-ANALYSIS_READY_C01:1'
 
-# training
+# Training
 TEST_SPLIT = 0.9
 BOTTLENECK = {
     'bbh': 4,
@@ -90,9 +93,10 @@ CLASS_ORDER = ['background', 'bbh', 'glitches', 'sglf', 'sghf']
 LIMIT_TRAINING_DATA = None
 CURRICULUM_SNRS = [256, 128, 64, 32, 16]
 
-# pearson calculation
+# Pearson calculation
 MAX_SHIFT = 10e-3
 SHIFT_STEP = 2
+PEARSON_FLAG = False
 
 """
     Factors to keep for the FM
@@ -119,25 +123,21 @@ SHIFT_STEP = 2
     20 - Pearson
 """
 # Baseline
-# FACTORS_NOT_USED_FOR_FM = []
 FACTORS_NOT_USED_FOR_FM = [3,7,11,15,19]
 
-# timeslides
+# Timeslides
 GW_EVENT_CLEANING_WINDOW = 5
 TIMESLIDE_STEP = 0.5
 TIMESLIDE_TOTAL_DURATION = int(1.1 * 365 * 24 * 3600 / 4) # run on 4 different GPUs, so in total 400 * 24 * 3600
 FM_TIMESLIDE_TOTAL_DURATION = 0.1 * 30 * 24 * 3600
-#TIMESLIDES_START = 1238166018 # Ryan = 1248652818; Eric = 1243382418; Katya = 1238166018
-#TIMESLIDES_STOP = 1253977218 # Ryan = 1253977218; Eric = 1248652818; Katya = 1243382418
 TIMESLIDES_START = 1238166018
 TIMESLIDES_STOP = 1243382418
 
-
-# linear SVM
+# Linear SVM
 SVM_LR = 0.01
 N_SVM_EPOCHS = 5000
 
-# plotting
+# Plotting
 SPEED = True
 RECREATION_LIMIT = 50
 RECREATION_SAMPLES_PER_PLOT = 1
@@ -149,18 +149,18 @@ SNR_VS_FAR_HORIZONTAL_LINES = [3600, 24 * 3600,
                                7 * 24 * 3600, 30 * 24 * 3600, 365 * 24 * 3600]
 SNR_VS_FAR_HL_LABELS = ['hour', 'day', 'week', 'month', 'year']
 
-# varying SNR injection
+# Varying SNR injection
 N_VARYING_SNR_INJECTIONS = 2000
 VARYING_SNR_DISTRIBUTION = 'uniform'
 VARYING_SNR_LOW = 5
 VARYING_SNR_HIGH = 50
 VARYING_SNR_SEGMENT_INJECTION_LENGTH = 5
 
-# false alarm rate calculation
+# False alarm rate calculation
 HISTOGRAM_BIN_DIVISION = 0.001
 HISTOGRAM_BIN_MIN = 50.
 
-# supernova injection
+# Supernova injection
 SNR_SN_LOW = VARYING_SNR_LOW
 SNR_SN_HIGH = VARYING_SNR_HIGH
 N_BURST_INJ = 500
@@ -168,10 +168,7 @@ N_BURST_INJ = 500
 RETURN_INDIV_LOSSES = True
 SCALE = 3
 
-# hrss
-HRSS_VS_FAR_BAR = 1e-23
-
-# supervised
+# Supervised
 SUPERVISED_BKG_TIMESLIDE_LEN = 24*3600
 SUPERVISED_N_BKG_SAMPLE = 1000
 SUPERVISED_REDUCE_N_BKG = 85000
@@ -181,5 +178,5 @@ SUPERVISED_VALIDATION_SPLIT = 0.15
 SUPERVISED_FAR_TIMESLIDE_LEN = 24*3600
 SUPERVISED_SMOOTHING_KERNEL = 50
 
-PEARSON_FLAG = False
+# Heuristics
 DATA_EVAL_USE_HEURISTIC = True

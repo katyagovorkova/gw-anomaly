@@ -84,7 +84,7 @@ rule fetch_timeslide_data:
 
 rule generate_data:
     input:
-        omicron = '/home/katya.govorkova/gw-anomaly/output/omicron/',
+        omicron = 'output/omicron/',
         intersections = expand(rules.find_valid_segments.output.save_path,
             period=PERIOD),
     params:
