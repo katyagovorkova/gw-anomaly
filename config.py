@@ -1,13 +1,11 @@
 # Version of the code with which the data was generated
-PERIOD = 'O3a' # or O3b
-VERSION = PERIOD + 'v7' # _only_correlation
+PERIOD = 'O3' # or O3b
+VERSION = PERIOD + 'v0' # _only_correlation
 STRAIN_START = 1238166018 # for O3b 1256655618
 STRAIN_STOP = 1238170289  # for O3b 1269363618
 DATA_LOCATION = f'output/{VERSION}/data'
 MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
-
-#1238166018_1253977218
 
 # GPU
 GPU_NAME = 'cuda:0'

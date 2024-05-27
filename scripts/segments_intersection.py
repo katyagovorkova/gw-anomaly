@@ -14,17 +14,11 @@ def intersect(seg1, seg2):
     return None
 
 
-def main(hanford_path, livingston_path, save_path, period):
-    '''
-    Function which takes the valid segments from both detectors
-    and finds an "intersection", i.e. segments where both detectors
-    are recording data
+def find_intersections(period):
 
-    paths are string which point to the corresponding .json files
-    '''
-    hanford = json.load(open(hanford_path))['segments']
+    hanford = json.load(open(f'data/{period}_Hanford_segments.json'))['segments']
     hanford = np.array(hanford)
-    livingston = json.load(open(livingston_path))['segments']
+    livingston = json.load(open(f'data/{period}_Livingston_segments.json'))['segments']
     livingston = np.array(livingston)
 
     # there aren't that many segments, so N^2 isn't so bad
@@ -34,10 +28,26 @@ def main(hanford_path, livingston_path, save_path, period):
             intersection = intersect(h_elem, l_elem)
             if intersection is not None:
                 valid_segments.append(intersection)
-    # if period == 'O3a':
+
+    return np.array(valid_segments)
+
+
+def main(save_path, period):
+    '''
+    Function which takes the valid segments from both detectors
+    and finds an "intersection", i.e. segments where both detectors
+    are recording data
+
+    paths are string which point to the corresponding .json files
+    '''
+    if period == 'O3':
+        valid_segments_a = find_intersections('O3a')
+        valid_segments_b = find_intersections('O3b')
+        valid_segments = np.concatenate([valid_segments_a, valid_segments_b])
+    else:
+        valid_segments = find_intersections(period)
+
     np.save(save_path, np.array(valid_segments))
-    # elif period == 'O3b':
-    #     np.save(save_path, np.array(valid_segments))
 
 
-main(snakemake.input[0], snakemake.input[1], snakemake.output[0], snakemake.wildcards['period'])
+main(snakemake.output[0], snakemake.wildcards['period'])

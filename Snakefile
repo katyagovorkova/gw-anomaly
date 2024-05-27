@@ -38,9 +38,6 @@ wildcard_constraints:
 
 
 rule find_valid_segments:
-    input:
-        hanford_path = 'data/{period}_Hanford_segments.json',
-        livingston_path = 'data/{period}_Livingston_segments.json'
     output:
         save_path = 'output/{period}_intersections.npy'
     script:
