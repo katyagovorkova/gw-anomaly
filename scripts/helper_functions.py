@@ -19,8 +19,6 @@ from config import (
     SAMPLE_RATE,
     EDGE_INJECT_SPACING,
     GLITCH_SNR_BAR,
-    STRAIN_START,
-    STRAIN_STOP,
     LOADED_DATA_SAMPLE_RATE,
     BANDPASS_LOW,
     BANDPASS_HIGH,
@@ -235,18 +233,18 @@ def reduce_to_significance(data):
 
 def load_folder(
         path: str,
+        start_stop: list,
         load_start: int=None,
         load_stop: int=None,
         glitches: bool=False):
     '''
     load the glitch times and data associated with a "save" folder
     '''
-
     if glitches is False:
-        start, stop = STRAIN_START, STRAIN_STOP
-        path += f'/{STRAIN_START}_{STRAIN_STOP}/'
-        min_trigger_load = STRAIN_START + load_start
-        max_trigger_load = STRAIN_START + load_stop
+        start = int(start_stop[0])
+        path += f'/{start_stop[0]}_{start_stop[1]}/'
+        min_trigger_load = start + load_start
+        max_trigger_load = start + load_stop
     else:
         start, stop = [int(elem) for elem in path.split("/")[-2].split("_")]
         min_trigger_load = start + load_start

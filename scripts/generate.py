@@ -22,7 +22,6 @@ sys.path.append(
 from config import (
     SEG_NUM_TIMESTEPS,
     SAMPLE_RATE,
-    STRAIN_START,
     N_TRAIN_INJECTIONS,
     N_FM_INJECTIONS,
     DATA_SEGMENT_LOAD_START,
@@ -57,9 +56,10 @@ from config import (
 
 
 def generate_timeslides(
+        start_stop: str,
         folder_path: str,
         event_times_path: str):
-    loaded_data = load_folder(folder_path,
+    loaded_data = load_folder(folder_path, start_stop,
                               DATA_SEGMENT_LOAD_START,
                               DATA_SEGMENT_LOAD_STOP)
     data = np.vstack([loaded_data['H1']['data'], loaded_data['L1']['data']])
@@ -73,8 +73,8 @@ def generate_timeslides(
 
     data_cleaned = clean_gw_events(event_times,
                                    whitened,
-                                   STRAIN_START + DATA_SEGMENT_LOAD_START,
-                                   STRAIN_START + DATA_SEGMENT_LOAD_STOP)
+                                   int(start_stop[0]) + DATA_SEGMENT_LOAD_START,
+                                   int(start_stop[0]) + DATA_SEGMENT_LOAD_STOP)
     return data_cleaned
 
 
@@ -208,6 +208,7 @@ def wnb_polarization_generator(
 
 def inject_signal(
         folder_path: str,  # source of detector data, includes detector data and the omicron glitches/corresponding SNRs
+        start_stop: list,
         # source of the polarization files to be injected into the data
         data=None,
         SNR=None,
@@ -217,7 +218,7 @@ def inject_signal(
         return_injection_snr=False,
         return_scales=False):
 
-    loaded_data = load_folder(folder_path,
+    loaded_data = load_folder(folder_path, start_stop,
                               DATA_SEGMENT_LOAD_START,
                               DATA_SEGMENT_LOAD_STOP)
     detector_data = np.vstack(
@@ -275,6 +276,7 @@ def inject_signal(
 
 def inject_signal_curriculum(
         folder_path: str,  # source of detector data, includes detector data and the omicron glitches/corresponding SNRs
+        start_stop, # strain start and stop for the background fetch
         # source of the polarization files to be injected into the data
         data=None,
         SNR=None,
@@ -283,7 +285,7 @@ def inject_signal_curriculum(
         inject_at_end=False,
         return_injection_snr=False):
 
-    loaded_data = load_folder(folder_path,
+    loaded_data = load_folder(folder_path, start_stop,
                               DATA_SEGMENT_LOAD_START,
                               DATA_SEGMENT_LOAD_STOP)
     detector_data = np.vstack(
@@ -348,10 +350,11 @@ def inject_signal_curriculum(
 
 def generate_backgrounds(
         folder_path: str,
+        start_stop: list,
         n_backgrounds: int,
         segment_length=TRAIN_INJECTION_SEGMENT_LENGTH):
 
-    loaded_data = load_folder(folder_path,
+    loaded_data = load_folder(folder_path, start_stop,
                               DATA_SEGMENT_LOAD_START,
                               DATA_SEGMENT_LOAD_STOP)
     detector_data = np.vstack(
@@ -366,6 +369,7 @@ def generate_backgrounds(
 
 def generate_glitches(
         folder_path: str,
+        start_stop: list,
         n_glitches: int,
         segment_length=TRAIN_INJECTION_SEGMENT_LENGTH,
         load_start=DATA_SEGMENT_LOAD_START,
@@ -373,6 +377,7 @@ def generate_glitches(
 
     loaded_data = load_folder(
         folder_path,
+        start_stop,
         load_start,
         load_stop,
         glitches=True)
@@ -573,6 +578,7 @@ def main(args):
 
         # 2: create injections with those signal classes
         noisy, clean = inject_signal_curriculum(folder_path=args.folder_path,
+                                                start_stop=args.start_stop,
                                                 data=[bbh_cross, bbh_plus]
                                                 )
         # 3: Turn the injections into segments, ready for training
@@ -588,6 +594,7 @@ def main(args):
 
         # 2: create injections with those signal classes
         noisy, clean = inject_signal_curriculum(folder_path=args.folder_path,
+                                                start_stop=args.start_stop,
                                                 data=[sg_cross, sg_plus]
                                                 )
         # 3: Turn the injections into segments, ready for training
@@ -601,6 +608,7 @@ def main(args):
 
         # 2.5: generate/fetch the background classes
         backgrounds = generate_backgrounds(folder_path=args.folder_path,
+                                           start_stop=args.start_stop,
                                            n_backgrounds=N_TRAIN_INJECTIONS)
         # 3: Turn the injections into segments, ready for training
         training_data = sample_injections_main(source=None,
@@ -612,10 +620,12 @@ def main(args):
         if args.start is not None:
             assert args.stop is not None
             glitches = generate_glitches(folder_path=args.folder_path,
+                                         start_stop=args.start_stop,
                                          n_glitches=N_TRAIN_INJECTIONS,
                                          load_start=int(args.start), load_stop=int(args.stop))
         else:
             glitches = generate_glitches(folder_path=args.folder_path,
+                                         start_stop=args.start_stop,
                                          n_glitches=N_TRAIN_INJECTIONS)
 
         if glitches == 'empty':
@@ -637,12 +647,13 @@ def main(args):
             seglen = stop - start
             if seglen < 3600:
                 continue
-            
+
             full_path = f'./output/omicron/{start}_{stop}/'
 
             for j in range(seglen // 3600):
                 split_start, split_stop = j * 3600, (j + 1) * 3600
                 j_args = argparse.Namespace(
+                    start_stop=args.start_stop,
                     folder_path=full_path,
                     save_file=f'{full_path}/glitch.npy',
                     stype='glitch',
@@ -663,6 +674,7 @@ def main(args):
     elif args.stype == 'timeslides':
         event_times_path = 'data/LIGO_EVENT_TIMES.npy'
         training_data = generate_timeslides(
+            args.start_stop,
             args.folder_path,
             event_times_path=event_times_path
             )
@@ -679,6 +691,7 @@ def main(args):
         # 2: create the injections with those signal classes
         BBH_injections, sampled_snr, scales = inject_signal(
             folder_path=args.folder_path,
+            start_stop=args.start_stop,
             data=[bbh_cross, bbh_plus],
             segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
             inject_at_end=True,
@@ -699,7 +712,8 @@ def main(args):
 
         # 2: create the injections with those signal classes
         sg_injections, sampled_snr, scales = inject_signal(
-            folder_path=args.folder_path,
+           folder_path=args.folder_path,
+           start_stop=args.start_stop,
            data=[sg_cross, sg_plus],
            segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
            inject_at_end=True,
@@ -734,6 +748,7 @@ def main(args):
         # 2: create the injections with those signal classes
         training_data, sampled_snr, scales = inject_signal(
             folder_path=args.folder_path,
+            start_stop=args.start_stop,
             data=[wnb_cross, wnb_plus],
             segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
             inject_at_end=True,
@@ -759,6 +774,7 @@ def main(args):
         # 2: create injections with those polarizations
         training_data, sampled_snr, scales = inject_signal(
             folder_path=args.folder_path,
+            start_stop=args.start_stop,
             data=[sn_cross, sn_plus],
             segment_length=VARYING_SNR_SEGMENT_INJECTION_LENGTH,
             inject_at_end=True,
@@ -784,6 +800,7 @@ def main(args):
 
         # 2: create injections with those signal classes
         noisy, clean = inject_signal_curriculum(
+            start_stop=args.start_stop,
             folder_path=args.folder_path,
             data=[wnb_cross, wnb_plus])
 
@@ -794,6 +811,7 @@ def main(args):
         sn_cross, sn_plus = fetch_sn_polarization(args.sn_polarization_path)
 
         noisy, clean = inject_signal_curriculum(
+            start_stop=args.start_stop,
             folder_path=args.folder_path,
             data=[sn_cross, sn_plus])
 
@@ -831,8 +849,8 @@ if __name__ == '__main__':
                                            'supernova_varying_snr', 'supernova_fm_optimization',
                                            'burst_benchmark'])
 
-    parser.add_argument('--start', type=str, default=None)
-    parser.add_argument('--stop', type=str, default=None)
+    parser.add_argument('--start-stop', type=str, nargs='+', default=None,
+        help='Strain start and stop at which to fetch the background')
     parser.add_argument('--intersections', type=str, default=None)
     parser.add_argument('--sn-polarization-path', type=str,
                         default='data/z85_sfho/')

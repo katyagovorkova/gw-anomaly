@@ -6,7 +6,8 @@ from config import (
     FM_LOCATION,
     TIMESLIDES_START,
     TIMESLIDES_STOP,
-    TIMESLIDE_TOTAL_DURATION
+    TIMESLIDE_TOTAL_DURATION,
+    STRAIN_START_STOP
     )
 
 signalclasses = ['bbh', 'sglf', 'sghf']
@@ -90,29 +91,32 @@ rule generate_data:
     params:
         dependencies = expand(rules.fetch_site_data.output,
                                 site=['L1', 'H1'],
-                                version=VERSION)
+                                version=VERSION),
+        start_stop = lambda wildcards: STRAIN_START_STOP[wildcards.period]
     output:
-        file = 'output/{version}/data/{dataclass}.npz'
+        file = 'output/{version}/data_{period}/{dataclass}.npz'
     shell:
         'python3 scripts/generate.py {input.omicron} {output.file} \
             --stype {wildcards.dataclass} \
             --intersections {input.intersections} \
-            --period {PERIOD}'
+            --period {PERIOD} \
+            --start-stop {params.start_stop}'
 
-rule upload_data:
+rule merge_periods:
     input:
         expand(rules.generate_data.output.file,
                dataclass='{dataclass}',
-               version='{version}')
+               version='{version}',
+               period=STRAIN_START_STOP)
     output:
-        '/home/katya.govorkova/gwak/{version}/data/{dataclass}.npz'
+        'output/{version}/data/{dataclass}.npz'
     shell:
-        'mkdir -p /home/katya.govorkova/gwak/{wildcards.version}/data/; '
-        'cp {input} {output}; '
+        'python3 scripts/merge_periods.py {input} \
+            --output {output}'
 
 rule validate_data:
     input:
-        expand(rules.upload_data.output,
+        expand(rules.merge_periods.output,
                dataclass=modelclasses+dataclasses,
                version=VERSION)
     shell:

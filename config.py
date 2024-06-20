@@ -1,8 +1,11 @@
 # Version of the code with which the data was generated
 PERIOD = 'O3' # or O3b
 VERSION = PERIOD + 'v0' # _only_correlation
-STRAIN_START = 1238166018 # for O3b 1256655618
-STRAIN_STOP = 1238170289  # for O3b 1269363618
+# if you use only O3a/O3b, you need to remove the other period below:
+STRAIN_START_STOP = {
+    'O3a': [1238166018, 1238170289],
+    'O3b': [1256663958, 1256673192]}
+
 # If you want to use specific version of data or models, specify the path here
 # and in the Snakefile turn on a flag that says use_trained_models
 DATA_LOCATION = f'output/{VERSION}/data'
@@ -10,7 +13,7 @@ MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
 
 # GPU
-GPU_NAME = 'cuda:0'
+GPU_NAME = 'cuda:1'
 
 # Data generation
 IFOS = ['H1', 'L1']
