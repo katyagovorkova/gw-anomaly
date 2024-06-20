@@ -6,7 +6,8 @@ import argparse
 def main(args):
 
     input_files = args.input_files
-
+    output = args.output
+    
     # if we are running only for one period, no need to do anything,
     # just copy generated data in the final folder
     if len(input_files) == 1:
