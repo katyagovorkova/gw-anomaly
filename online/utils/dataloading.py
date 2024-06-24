@@ -10,7 +10,6 @@ from gwpy.timeseries import TimeSeries
 from scipy.signal import resample
 
 PATH_LIKE = Union[str, Path]
-GWF_SAMPLE_RATE = 16384
 
 patterns = {
     "prefix": "[a-zA-Z0-9_:-]+",
@@ -52,7 +51,8 @@ def _is_gwf(match):
     return match is not None and match.group("suffix") == "gwf"
 
 
-def get_prefix(datadir: Path):
+def get_prefix(datadir: str):
+    datadir = Path(datadir)
     if not datadir.exists():
         raise FileNotFoundError(f"No data directory '{datadir}'")
 
@@ -114,7 +114,7 @@ def data_iterator(
         ifo_dir = "_".join([ifos[0], ifo_suffix])
     else:
         ifo_dir = ifos[0]
-    prefix, length, t0 = get_prefix(datadir / ifo_dir)
+    prefix, length, t0 = get_prefix(f"{datadir}/{ifo_dir}")
     middle = "_".join(prefix.split("_")[1:])
 
     # give ourselves a little buffer so we don't
@@ -134,7 +134,7 @@ def data_iterator(
                 ifo_dir = "_".join([ifo, ifo_suffix])
             else:
                 ifo_dir = ifo
-            fname = datadir / ifo_dir / f"{prefix}-{t0}-{length}.gwf"
+            fname = Path(f"{datadir}/{ifo_dir}/{prefix}-{t0}-{length}.gwf")
 
             tick = time.time()
             while not fname.exists():
@@ -181,7 +181,7 @@ def data_iterator(
 
             frame = np.stack(frames)
             frame_buffer = np.append(frame_buffer, frame, axis=1)
-            dur = frame_buffer.shape[-1] / GWF_SAMPLE_RATE
+            dur = frame_buffer.shape[-1] / 16384
             # Need at least 3 seconds to be able to crop out edge effects
             # from resampling and just yield the middle second
             if dur >= 3:
@@ -189,19 +189,15 @@ def data_iterator(
                     frame_buffer, int(sample_rate * dur), axis=1, window="hann"
                 )
                 x = x[:, slc]
-                frame_buffer = frame_buffer[:, GWF_SAMPLE_RATE:]
+                frame_buffer = frame_buffer[:, 16384:]
                 yield torch.Tensor(x).double(), t0 - 1, last_ready
 
             last_ready = ready
             t0 += length
 
 
-def read_channel(fname: PATH_LIKE, channel: str, num_retries: int = 3):
-    """
-    Read a channel from a frame file, retrying if the read fails
-    and handling common errors that can occur when reading frame files
-    """
-    for i in range(num_retries):
+def read_channel(fname, channel):
+    for i in range(3):
         try:
             x = TimeSeries.read(fname, channel=channel)
         except ValueError as e:

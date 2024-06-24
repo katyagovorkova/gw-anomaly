@@ -2,44 +2,67 @@ import h5py
 import numpy as np
 import torch
 
+GPU = 2
+
+class DataBuffer:
+    def __init__(
+        self,
+        num_channels: int,
+        sample_rate: float,
+        inference_sampling_rate: float,
+        integration_window_length: float,
+        input_buffer_length: float,
+        output_buffer_length: float,
+    ):
+        self.input_buffer = InputBuffer(
+            num_channels=num_channels,
+            sample_rate=sample_rate,
+            buffer_length=input_buffer_length,
+        )
+        self.output_buffer = OutputBuffer(
+            inference_sampling_rate=inference_sampling_rate,
+            integration_window_length=integration_window_length,
+            buffer_length=output_buffer_length,
+        )
+
+    def reset_state(self):
+        self.input_buffer.reset_state()
+        self.output_buffer.reset_state()
+
+    def write(self, write_path, event_time):
+        event_dir = f"event_{int(event_time)}"
+        input_fname = write_path / event_dir / "strain.h5"
+        output_fname = write_path / event_dir / "network_output.h5"
+
+        self.input_buffer.write(input_fname, event_time)
+        self.output_buffer.write(output_fname, event_time)
+
+    def update(
+        self,
+        input_update,
+        output_update,
+        t0,
+        input_time_offset,
+        output_time_offset,
+    ):
+        self.input_buffer.update(input_update, t0 + input_time_offset)
+        return self.output_buffer.update(
+            output_update, t0 + output_time_offset
+        )
+
 
 class InputBuffer:
-    """
-    A buffer for storing raw strain data f
-    or use in parameter estimation (amplfi) followup
-    of events detected by Aframe
-
-    Args:
-        num_channels:
-            The number of channels in the data
-        sample_rate:
-            The sampling rate of the data
-        buffer_length:
-            The length of the buffer in seconds
-        pe_window:
-            The length of the window to use for parameter estimation in seconds
-        event_position:
-            The placement of the coalescence time
-            of the event in the pe window in seconds
-    """
-
     def __init__(
         self,
         num_channels: int,
         sample_rate: float,
         buffer_length: float,
-        fduration: float,
-        pe_window: float,
-        event_position: float,
     ):
-        self.fduration = fduration
         self.num_channels = num_channels
         self.sample_rate = sample_rate
         self.buffer_length = buffer_length
         self.buffer_size = int(buffer_length * sample_rate)
-        self.pe_window = pe_window
-        self.event_position = event_position
-        self.reset()
+        self.reset_state()
 
     def write(self, write_path, event_time):
         start = self.t0
@@ -51,10 +74,10 @@ class InputBuffer:
             f.create_dataset("H1", data=self.input_buffer[0, :].cpu())
             f.create_dataset("L1", data=self.input_buffer[1, :].cpu())
 
-    def reset(self):
-        self.t0 = None
+    def reset_state(self):
+        self.t0 = 0
         self.input_buffer = torch.zeros(
-            (self.num_channels, self.buffer_size), device="cuda"
+            (self.num_channels, self.buffer_size), device=f"cuda:{GPU}"
         )
 
     def update(self, update, t0):
@@ -63,31 +86,8 @@ class InputBuffer:
         update_duration = update.shape[-1] / self.sample_rate
         self.t0 = t0 - (self.buffer_length - update_duration)
 
-    def get_pe_data(self, event_time: float):
-        window_start = (
-            event_time - self.t0 - self.event_position - self.fduration / 2
-        )
-        window_start = int(self.sample_rate * window_start)
-        window_end = int(
-            window_start + (self.pe_window + self.fduration) * self.sample_rate
-        )
-
-        psd = self.input_buffer[:, :window_start]
-        window = self.input_buffer[:, window_start:window_end]
-
-        return psd, window
-
 
 class OutputBuffer:
-    """
-    A buffer for storing raw and integrated neural network output
-
-    Args:
-        inference_sampling_rate: The sampling rate of the neural network
-        integration_window_length: The length of the integration window
-        buffer_length: The length of the buffer in seconds
-    """
-
     def __init__(
         self,
         inference_sampling_rate: float,
@@ -98,17 +98,17 @@ class OutputBuffer:
         self.integrator_size = int(
             integration_window_length * inference_sampling_rate
         )
-        self.window = torch.ones((1, 1, self.integrator_size), device="cuda")
+        self.window = torch.ones((1, 1, self.integrator_size), device=f"cuda:{GPU}")
         self.window /= self.integrator_size
         self.buffer_length = buffer_length
         self.buffer_size = int(buffer_length * inference_sampling_rate)
         self.reset_state()
 
-    def reset(self):
-        self.t0 = None
-        self.output_buffer = torch.zeros((self.buffer_size,), device="cuda")
+    def reset_state(self):
+        self.t0 = 0
+        self.output_buffer = torch.zeros((self.buffer_size,), device=f"cuda:{GPU}")
         self.integrated_buffer = torch.zeros(
-            (self.buffer_size,), device="cuda"
+            (self.buffer_size,), device=f"cuda:{GPU}"
         )
 
     def write(self, write_path, event_time):
@@ -126,12 +126,9 @@ class OutputBuffer:
         y = torch.nn.functional.conv1d(x, self.window, padding="valid")
         return y[0, 0]
 
-    def update(self, update: torch.Tensor, t0: float):
-        # first append update to the output buffer
-        # and remove buffer_size samples from front
-        output_buffer = torch.cat([self.output_buffer, update])
-        self.output_buffer = output_buffer[-self.buffer_size :]
-
+    def update(self, update, t0):
+        self.output_buffer = torch.cat([self.output_buffer, update])
+        self.output_buffer = self.output_buffer[-self.buffer_size :]
         # t0 corresponds to the time of the first sample in the update
         # self.t0 corresponds to the earliest time in the buffer
         update_duration = len(update) / self.inference_sampling_rate
@@ -145,19 +142,3 @@ class OutputBuffer:
         )
         self.integrated_buffer = self.integrated_buffer[-self.buffer_size :]
         return integrated.cpu().numpy()
-
-
-class Integrator:
-    def __init__(
-        self, integration_window_length: int, inference_sampling_rate: int
-    ):
-        self.integrator_size = int(
-            integration_window_length * inference_sampling_rate
-        )
-        self.window = torch.ones((1, 1, self.integrator_size), device="cuda")
-        self.window /= self.integrator_size
-
-    def __call__(self, x: torch.Tensor):
-        x = x.view(1, 1, -1)
-        y = torch.nn.functional.conv1d(x, self.window, padding="valid")
-        return y[0, 0]
