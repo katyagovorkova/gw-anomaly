@@ -12,11 +12,11 @@ from utils.trigger import Searcher, Trigger
 
 from ml4gw.transforms import SpectralDensity, Whiten
 
-import os
-import sys
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from scripts.models import LSTM_AE_SPLIT as architecture
+# import os
+# import sys
+# sys.path.append(
+#     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+from gwak.scripts.models import LSTM_AE_SPLIT as architecture
 
 @torch.no_grad()
 def main(
@@ -27,21 +27,21 @@ def main(
     ifos: List[str] = ['H1', 'L1'],
     channel: str = 'GDS-CALIB_STRAIN_CLEAN',
     sample_rate: float = 4096,
-    kernel_length: float = 200/4096,
-    inference_sampling_rate: float = 4096,
-    psd_length: float = 100,
-    trigger_distance: float = 1000,
-    fduration: float = 1,
-    integration_window_length: float = 5,
-    fftlength: Optional[float] = None,
-    highpass: Optional[float] = None,
-    refractory_period: float = 8,
+    kernel_length: float = 200/4096, # number of sec passed in
+    inference_sampling_rate: float = 4096/5, # stride length == window overlap (Hz)
+    psd_length: float = 64, # seconds of data to calculate PSD; moves with inference sampling rate
+    trigger_distance: float = 1000, # distance from the window edges to re-calculate the coalescence time
+    fduration: float = 1, # whitening parameter: how much data to cut off
+    integration_window_length: float = 1, # integration window in seconds
+    fftlength: Optional[float] = 2, # parameter of whitener
+    highpass: Optional[float] = 30, # high pass :)
+    refractory_period: float = 0, # for how long to wait between detection
     far_per_day: float = 1,
-    secondary_far_threshold: float = 24,
-    server: str = "test",
-    ifo_suffix: str = None,
-    input_buffer_length=5,
-    output_buffer_length=8,
+    secondary_far_threshold: float = 24, # for debugging
+    server: str = "test", # choices are  Literal["local", "playground", "test", "production"]
+    ifo_suffix: str = None, # read other stream, like for L1_O3ReplayMDC set O3ReplayMDC (MDC=mock data challenge)
+    input_buffer_length: int = 75, # in sec
+    output_buffer_length: int = 8, # in sec; how many seconds do we need to do integration
     verbose: bool = False,
 ):
 
@@ -77,16 +77,16 @@ def main(
     gwak.load_state_dict(weights)
     gwak.eval()
 
-    # Amplfi setup. Hard code most of it for now
-    spectral_density = SpectralDensity(
-        sample_rate=sample_rate,
-        fftlength=fftlength,
-        average="median",
-    ).to(f'cuda:{GPU}')
-    pe_whitener = Whiten(
-        fduration=fduration, sample_rate=sample_rate, highpass=highpass
-    ).to(f'cuda:{GPU}')
-    # amplfi, std_scaler = set_up_amplfi()
+    # # Amplfi setup. Hard code most of it for now
+    # spectral_density = SpectralDensity(
+    #     sample_rate=sample_rate,
+    #     fftlength=fftlength,
+    #     average="median",
+    # ).to(f'cuda:{GPU}')
+    # pe_whitener = Whiten(
+    #     fduration=fduration, sample_rate=sample_rate, highpass=highpass
+    # ).to(f'cuda:{GPU}')
+    # # amplfi, std_scaler = set_up_amplfi()
 
     # set up some objects to use for finding
     # and submitting triggers
@@ -114,22 +114,22 @@ def main(
             idx = 1
         return triggers[idx]
 
-    # offset the initial timestamp of our
-    # integrated outputs relative to the
-    # initial timestamp of the most recently
-    # loaded frames
-    time_offset = (
-        1 / inference_sampling_rate  # end of the first kernel in batch
-        - fduration / 2  # account for whitening padding
-        - integration_window_length  # account for time to build peak
-    )
+    # # offset the initial timestamp of our
+    # # integrated outputs relative to the
+    # # initial timestamp of the most recently
+    # # loaded frames
+    # time_offset = (
+    #     1 / inference_sampling_rate  # end of the first kernel in batch
+    #     - fduration / 2  # account for whitening padding
+    #     - integration_window_length  # account for time to build peak
+    # )
 
-    if trigger_distance is not None:
-        if trigger_distance > 0:
-            time_offset -= kernel_length - trigger_distance
-        if trigger_distance < 0:
-            # Trigger distance parameter accounts for fduration already
-            time_offset -= np.abs(trigger_distance) - fduration / 2
+    # if trigger_distance is not None:
+    #     if trigger_distance > 0:
+    #         time_offset -= kernel_length - trigger_distance
+    #     if trigger_distance < 0:
+    #         # Trigger distance parameter accounts for fduration already
+    #         time_offset -= np.abs(trigger_distance) - fduration / 2
 
     logging.info("Beginning search")
     data_it = data_iterator(
@@ -212,9 +212,9 @@ def main(
         integrated = buffer.update(
             input_update=X,
             output_update=y,
-            t0=t0,
+            t0=t0, # time offset to re-calculate the time of coalescence
             input_time_offset=0,
-            output_time_offset=time_offset + integration_window_length,
+            output_time_offset=0 # used to be (time_offset + integration_window_length)
         )
 
         event = None

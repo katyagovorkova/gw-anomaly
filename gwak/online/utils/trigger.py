@@ -218,9 +218,10 @@ class Trigger:
             json.dump(filecontents, f)
 
         logging.info(f"Submitting trigger to file {filename}")
+        # createEvent uploads to the GraceDB
         response = self.gdb.createEvent(
-            group="CBC",
-            pipeline="aframe",
+            group="Burst",
+            pipeline="gwak",
             filename=str(filename),
             search="AllSky",
         )
