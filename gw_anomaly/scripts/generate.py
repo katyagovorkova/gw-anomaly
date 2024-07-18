@@ -648,14 +648,15 @@ def main(args):
             if seglen < 3600:
                 continue
 
-            full_path = f'./output/omicron/{start}_{stop}/'
+            full_path = f'/home/katya.govorkova/gw_anomaly/output/omicron/{start}_{stop}/'
 
             for j in range(seglen // 3600):
                 split_start, split_stop = j * 3600, (j + 1) * 3600
+                os.makedirs('/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/omicron/{start}_{stop}/', exist_ok=True)
                 j_args = argparse.Namespace(
                     start_stop=args.start_stop,
                     folder_path=full_path,
-                    save_file=f'{full_path}/glitch.npy',
+                    save_file=f'/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/omicron/{full_path}/glitch.npy',
                     stype='glitch',
                     start=split_start,
                     stop=split_stop)
@@ -665,7 +666,7 @@ def main(args):
                     continue
 
                 datums.append(datum)
-                delete(datum)
+                del datum
 
         training_data = np.concatenate(datums, axis=0)
         print(f'Total glitch shape is {training_data.shape}')

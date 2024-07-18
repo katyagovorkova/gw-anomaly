@@ -154,8 +154,12 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
 
     return fill_strains, edge_check_passed
 
+def heuristic_reweighting_function(x, L=40):
+    return 1 - 1/(1+np.exp(-L*(x-0.5)))
+
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
+    print(159, "starting evaluate_timeslides.py")
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
@@ -173,7 +177,7 @@ def main(args):
     gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
     norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
     fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
-    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+    fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
 
@@ -190,6 +194,7 @@ def main(args):
     not_finished = True
     initial_roll = 0
     while not_finished:
+        print(194, "evaluate_timeslides iteration")
         data = np.load(args.data_path)
         assert data.shape[0] == 2
         if data.shape[1] < 1e5: return None
@@ -242,7 +247,7 @@ def main(args):
 
         for timeslide_num in range(1, n_timeslides + 1):
             computed_hist = None
-            if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
+            #if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
             ts = time.time()
 
             if timeslide_num * roll_amount > sample_length * SAMPLE_RATE:
@@ -298,7 +303,7 @@ def main(args):
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
 
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
-
+                    print("FOUND SOME EVENTS")
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
 
                     filtered_final_score = smoothed_scores.index_select(0, indices)
@@ -319,28 +324,51 @@ def main(args):
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
 
                     final_gwak_vals = filtered_final_scaled_evals
-                    heuristics_test = True
+                    heuristics_tests = True
 
+                    new_weights = None
                     if heuristics_tests:
                         heuristic_inputs = []
                         #passed_heuristics = []
                         gwak_filtered = extract(filtered_final_scaled_evals)
+                        new_weights = []
                         for i, strain_segment in enumerate(timeslide_chunks):
                             strain_feats = parse_strain(strain_segment)
                             together = np.concatenate([strain_feats, gwak_filtered[i]])
                             together = np.concatenate([together, filtered_final_score[i]])
                             heuristic_inputs.append(together)
+                            heur_res  = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+                            print(heur_res, together.shape)
+                            reweighter = heuristic_reweighting_function(heur_res)
+                            new_weights.append(reweighter)
+
+                        #assert 0
+                        print("new weights", new_weights)
                         heuristic_inputs = np.array(heuristic_inputs)
+                        
+                        # model_heuristic
+                        
                         
                         # append it onto the save file
                         heuristic_save = np.load(f"{args.save_evals_path}_heuristics_data.npy")
                         heuristic_save = np.vstack([heuristic_save, heuristic_inputs])
                         #print("accumulated save:", heuristic_save.shape, heuristic_save[-1])
+
                         np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristic_save)
 
                     if len(filtered_final_score) > 0:
                         final_gwak_vals = combine_freqcorr(final_gwak_vals)
+                        print("final gwak vals", final_gwak_vals, "filt final score", filtered_final_score)
+                        #assert 0
                         #print("final score", filtered_final_score)
+
+                        if new_weights is not None:
+                            for k in range(len(new_weights)):
+                                print(367, filtered_final_score, new_weights)
+                                if len(filtered_final_score) == 0:
+                                    filtered_final_score[0][k] *= new_weights[k]
+                                else:
+                                    filtered_final_score[k] *= new_weights[k]
                         computed_hist = np.histogram(filtered_final_score, bins=1000, range=(-20, 20))[0]
 
                         #gwak histogram

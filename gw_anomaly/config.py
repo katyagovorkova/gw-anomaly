@@ -1,10 +1,12 @@
 # Version of the code with which the data was generated
-PERIOD = 'O3' # or O3b
+PERIOD = 'O3a' # or O3b
 VERSION = PERIOD + 'v0' # _only_correlation
 # if you use only O3a/O3b, you need to remove the other period below:
 STRAIN_START_STOP = {
     'O3a': [1238166018, 1238170289],
-    'O3b': [1256663958, 1256673192]}
+    # 'O3b': [1256663958, 1256673192]
+    }
+
 
 # If you want to use specific version of data or models, specify the path here
 # and in the Snakefile turn on a flag that says use_trained_models
@@ -13,7 +15,7 @@ MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
 
 # GPU
-GPU_NAME = 'cuda:1'
+GPU_NAME = 'cuda:0'
 
 # Data generation
 IFOS = ['H1', 'L1']
@@ -131,10 +133,10 @@ FACTORS_NOT_USED_FOR_FM = [3,7,11,15,19]
 # Timeslides
 GW_EVENT_CLEANING_WINDOW = 5
 TIMESLIDE_STEP = 0.5
-TIMESLIDE_TOTAL_DURATION = int(1.1 * 365 * 24 * 3600 / 4) # run on 4 different GPUs, so in total 400 * 24 * 3600
+TIMESLIDE_TOTAL_DURATION = int(1.1 * 365 * 24 * 3600 / 4)*4 # run on 4 different GPUs, so in total 400 * 24 * 3600
 FM_TIMESLIDE_TOTAL_DURATION = 0.1 * 30 * 24 * 3600
-TIMESLIDES_START = 1238166018
-TIMESLIDES_STOP = 1243382418
+TIMESLIDES_START = 1249093442#1238166018
+TIMESLIDES_STOP = 1249101026#1243382418
 
 # Linear SVM
 SVM_LR = 0.01

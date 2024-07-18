@@ -11,18 +11,19 @@ from utils.snapshotter import SnapshotWhitener
 from utils.trigger import Searcher, Trigger
 
 from ml4gw.transforms import SpectralDensity, Whiten
-
+import matplotlib.pyplot as plt
 import os
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from scripts.models import LSTM_AE_SPLIT as architecture
+# #from scripts.models import LSTM_AE_SPLIT as architecture
+from scripts.entire_gwak_model import FullGWAK as architecture
 
 @torch.no_grad()
 def main(
     architecture: Callable = architecture,
     outdir: Path = '.',
-    weights_path: Path = '/home/katya.govorkova/gw_anomaly/output/O3av2/trained/models/bbh.pt',
+    weights_path: Path = '/home/katya.govorkova/gw_anomaly/output/O3av2/trained/models/',
     datadir: Path = '/dev/shm/kafka',
     ifos: List[str] = ['H1', 'L1'],
     channel: str = 'GDS-CALIB_STRAIN_CLEAN',
@@ -59,7 +60,8 @@ def main(
     print(f"Build network and loading weights from {weights_path}")
 
     # gwak setup
-    gwak = architecture(num_ifos, 200, 4).to(f'cuda:{GPU}')
+    #gwak = architecture(num_ifos, 200, 4).to(f'cuda:{GPU}')
+    gwak =  architecture(weights_path)
     fftlength = fftlength or kernel_length + fduration
     whitener = SnapshotWhitener(
         num_channels=num_ifos,
@@ -72,10 +74,11 @@ def main(
         highpass=highpass,
     )
     current_state = whitener.get_initial_state().to(f'cuda:{GPU}')
-
-    weights = torch.load(weights_path)
-    gwak.load_state_dict(weights)
-    gwak.eval()
+    print(77, current_state.shape)
+    
+    # weights = torch.load(weights_path)
+    # gwak.load_state_dict(weights)
+    # gwak.eval()
 
     # Amplfi setup. Hard code most of it for now
     spectral_density = SpectralDensity(
@@ -143,6 +146,8 @@ def main(
     integrated = None  # need this for static linters
     last_event_written = True
     last_event_time = 0
+    print(data_it)
+    
     for X, t0, ready in data_it:
         # adjust t0 to represent the timestamp of the
         # leading edge of the input to the network
@@ -203,11 +208,19 @@ def main(
             current_state = whitener.get_initial_state().to(f'cuda:{GPU}')
             buffer.reset_state()
             in_spec = True
+        print(211, current_state.shape)
 
+        x0 = X.cpu().detach().numpy()
+        plt.plot(x0[0, :])
+        plt.savefig("./example.pdf")
+        plt.close()
         X = X.to(f'cuda:{GPU}')
+        print(212, X.shape)
         batch, current_state, full_psd_present = whitener(X, current_state)
         print(f'Batch shape is {batch.shape}')
-        y = gwak(batch)[:,0,0]
+        y, _ = gwak.evaluate_data(batch)#[:,0,0]
+        y = y[:, 0] # remove dummy dimension
+        print(211, y.shape)
         print(f'OUTPUT shape is {y.shape}')
         integrated = buffer.update(
             input_update=X,

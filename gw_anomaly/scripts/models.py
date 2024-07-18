@@ -16,11 +16,12 @@ class LinearModel(nn.Module):
 
     def __init__(self, n_dims):
         super(LinearModel, self).__init__()
-        self.layer = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM), 1)
-
+        #self.layer = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM), 1)
+        self.layer = nn.Linear(n_dims, 1)
         if '_non_linear_bbh_only' in VERSION:
 
-            self.layer1 = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM)-1, 32)
+            # self.layer1 = nn.Linear(21-len(FACTORS_NOT_USED_FOR_FM)-1, 32)
+            self.layer1 = nn.Linear(n_dims, 32)
             self.layer2 = nn.Linear(32, 32)
             self.layer3 = nn.Linear(32, 32)
             self.layer4 = nn.Linear(32, 1)
@@ -34,6 +35,8 @@ class LinearModel(nn.Module):
             return self.layer4(x)
         else:
             return self.layer(x)
+
+
 
 class GwakClassifier(nn.Module):
 

@@ -220,7 +220,9 @@ class SnapshotWhitener(torch.nn.Module):
 
     def forward(self, update, current_state):
         update = update[None, :, :]
+        print(223, update.shape, current_state.shape)
         X, current_state = self.snapshotter(update, current_state)
+        print(224, update.shape, X.shape)
         # If we haven't had enough updates in a row to
         # meaningfully whiten, note that for upstream processes
         full_psd_present = (
@@ -228,4 +230,5 @@ class SnapshotWhitener(torch.nn.Module):
         )
         if not full_psd_present:
             self.contiguous_update_size += update.shape[-1]
+        print(231, "snapshotter", X.shape)
         return self.batch_whitener(X), current_state, full_psd_present

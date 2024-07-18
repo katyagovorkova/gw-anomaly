@@ -78,14 +78,14 @@ rule fetch_timeslide_data:
         start = {TIMESLIDES_START},
         stop = {TIMESLIDES_STOP}
     output:
-        f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}'
+        directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}')
     shell:
         'mkdir -p {output}; '
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
 rule generate_data:
     input:
-        omicron = 'output/omicron/',
+        omicron = '/home/katya.govorkova/gw_anomaly/output/omicron/',
         intersections = expand(rules.find_valid_segments.output.save_path,
             period=PERIOD),
     params:
@@ -160,7 +160,7 @@ rule generate_timeslides_for_far:
 rule all_timeslides_for_far:
     input:
         expand(rules.generate_timeslides_for_far.output,
-            id=range(4),
+            id=0,
             files_to_eval=-1,
             timeslide_total_duration=9460800) # 3600*24*365*1.2/4
 
@@ -289,7 +289,7 @@ rule compute_far:
 rule merge_far_hist:
     input:
         inputs = expand(rules.compute_far.output.save_path,
-            far_id=[0,1,2,3],
+            far_id=[0],
             version=VERSION),
     output:
         save_path = f'output/{VERSION}/far_bins.npy'
@@ -316,7 +316,7 @@ rule plot_results:
     input:
         dependencies = [rules.merge_far_hist.output.save_path,
             expand(rules.evaluate_signals.output.save_file,
-                signal_dataclass=fm_training_classes,
+                signal_dataclass=dataclasses,
                 version=VERSION)],
         fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
     params:

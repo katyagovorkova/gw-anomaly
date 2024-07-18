@@ -27,7 +27,8 @@ from config import (
 
 def main(args):
 
-    DEVICE = torch.device(f'cuda:{args.gpu}')
+    #DEVICE = torch.device(f'cuda:{args.gpu}')
+    DEVICE = torch.device(GPU_NAME)
 
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
@@ -63,7 +64,7 @@ def main(args):
         metric_vals = torch.from_numpy(metric_vals).float().to(DEVICE)
         norm_factors = torch.from_numpy(norm_factors).float().to(DEVICE)
 
-        model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+        model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
         model.load_state_dict(torch.load(
             fm_model_path, map_location=f'cuda:{args.gpu}'))
 
@@ -147,7 +148,7 @@ def main(args):
                 update_hist_cpu(all_vals)
 
     else:
-
+        print(150, DEVICE)
         data = np.load(args.data_path[0])['data']
         data = torch.from_numpy(data).to(DEVICE)
 
@@ -209,6 +210,7 @@ def main(args):
             final_values, _ = full_evaluation(
                 timeslide[None, :, :], model_path, DEVICE)
             print(final_values.shape)
+            print(213, final_values)
             print('saving, individually')
             means, stds = torch.mean(
                 final_values, axis=-2), torch.std(final_values, axis=-2)
@@ -259,6 +261,7 @@ def main(args):
                                              timeslide_data = important_timeslide)
 
             # save as a numpy file, with the index of timeslide_num
+            
             np.save(f'{args.save_evals_path}/timeslide_evals_{timeslide_num}.npy', final_values)
 
 

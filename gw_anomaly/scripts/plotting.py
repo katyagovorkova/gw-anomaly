@@ -45,10 +45,10 @@ from config import (
     RETURN_INDIV_LOSSES,
     CURRICULUM_SNRS,
     FACTORS_NOT_USED_FOR_FM,
-    HRSS_VS_FAR_BAR,
     DO_SMOOTHING,
     SMOOTHING_KERNEL,
-    SMOOTHING_KERNEL_SIZES)
+    SMOOTHING_KERNEL_SIZES,
+    VERSION)
 
 DEVICE = torch.device(GPU_NAME)
 
@@ -97,6 +97,8 @@ def amp_measure_vs_far_plotting(
         'wnblf': 'hotpink',
         'supernova': 'darkorange'
     }
+    print(100, amp_measures)
+    print(101, datas[0].shape)
 
     if not hrss:
         axs.set_xlabel(f'SNR', fontsize=20)
@@ -115,18 +117,19 @@ def amp_measure_vs_far_plotting(
                 data).float().to(DEVICE)).detach().cpu().numpy()
         else:
             fm_vals = np.dot(data, metric_coefs)
-
-        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(SMOOTHING_KERNEL//10)/SMOOTHING_KERNEL//10, mode='same'),
+        print(120, fm_vals)
+        fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(5)/5, mode='same'),
             axis=1,
             arr=fm_vals)
-
+        print(124, fm_vals)
         fm_vals = np.min(fm_vals, axis=1)
-        if not hrss:
-            amp_measure_plot, means_plot, stds_plot = calculate_means(
-                fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
-        else:
-            amp_measure_plot, means_plot, stds_plot = calculate_means(
-                fm_vals, amp_measure, bar=HRSS_VS_FAR_BAR)
+        print(126, fm_vals)
+        #if not hrss:
+        amp_measure_plot, means_plot, stds_plot = calculate_means(
+            fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
+        # else:
+        #     amp_measure_plot, means_plot, stds_plot = calculate_means(
+        #         fm_vals, amp_measure, bar=HRSS_VS_FAR_BAR)
 
         means_plot, stds_plot = np.array(means_plot), np.array(stds_plot)
         rename_map = {
@@ -555,7 +558,8 @@ def make_roc_curves(
         tag_ = rename_map[tag]
         metric_val_label = far_to_metric(
             365*24*3600, far_hist) #
-
+        #metric_val_label = 3
+        print(557, far_hist, far_hist.sum())
         # snrs = [int(elem) for elem in snrs] #not necessary after update
 
         #positive detection are the ones below the curve
@@ -576,6 +580,7 @@ def make_roc_curves(
             #print(insert_location)
             am_bin_total[insert_location] += 1
             detec_stat = fm_vals[i]
+            #print(578, detec_stat, metric_val_label)
             if detec_stat <= metric_val_label:
                 am_bin_detected[insert_location] += 1
 
@@ -697,6 +702,7 @@ def make_roc_curves_smoothing_comparison(data,
             if am_bin_total[i] != 0:
                 TPRs.append(am_bin_detected[i]/am_bin_total[i])
                 snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
+        print(701, TPRs)
         if tag in colors:
             axs.plot(snr_bins_plot, TPRs, label = f"{tag}, window: {smoothing_window}", c=colors[tag], alpha=(1-smoothing_window/200)**2)
         else:
@@ -815,10 +821,10 @@ def make_roc_curves_smoothing_comparison(data,
 
 def main(args):
 
-    model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+    model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
     model.load_state_dict(torch.load(
         args.fm_model_path, map_location=GPU_NAME))
-    weight = np.concatenate(model.layer.weight.data.cpu().numpy()[0], np.array([0]))
+    weight = np.concatenate([model.layer.weight.data.cpu().numpy()[0], np.array([0])])
     learned_dp_weights = weight[:]
 
     """
@@ -883,7 +889,7 @@ def main(args):
 
 
         if RETURN_INDIV_LOSSES:
-            model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+            model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
             model.load_state_dict(torch.load(
                 args.fm_model_path, map_location=GPU_NAME))
 
@@ -901,16 +907,23 @@ def main(args):
 
             data = (data - means) / stds
             data = data#[1000:]
-            snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+            #snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
             # hrss = np.load(f'output/data/{tag}_varying_snr_hrss.npz.npy')
-
+            #snrs = np.load(f'{args.data_predicted_path}/data/{tag}.npz.')#[1000:]
+            print(906, args.data_predicted_path)
+            PERIOD = "O3a"
+            print("fix me line 908!")
+            snrs = np.load(f"{args.data_predicted_path}/data_{PERIOD}/{tag}_varying_snr_values.npy")
             data_dict[tag] = data
             snrs_dict[tag] = snrs
             # hrss_dict[tag] = hrss
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+        #far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+        #far_hist = np.load(f'output/{VERSION}/1249093442_1249101026_timeslides_GPU0_duration34689600_files-1_timeslide_hist.npy')
+        far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU0_duration9460800_files-1_timeslide_hist.npy')
+
         amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                             [snrs_dict[elem] for elem in X3],
                             model,
@@ -959,7 +972,11 @@ def main(args):
 
         if do_make_roc_curves: #roc curve
 
-            far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+            #far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+            #far_hist = np.load(f'output/{VERSION}/1249093442_1249101026_timeslides_GPU0_duration34689600_files-1_timeslide_hist.npy')
+            far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU0_duration9460800_files-1_timeslide_hist.npy')
+            print(967, far_hist.sum())
+            print(968, f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
             make_roc_curves([data_dict[elem] for elem in X3],
                                 [snrs_dict[elem] for elem in X3],
                                 model,

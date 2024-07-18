@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "gw_anomaly"
+version = "0.1.0"
+description = ""
+authors = ["Katya Govorkova <katyag@mit.edu>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.8,<3.12"
+# local deps
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
