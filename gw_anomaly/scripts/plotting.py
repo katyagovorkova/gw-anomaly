@@ -97,8 +97,8 @@ def amp_measure_vs_far_plotting(
         'wnblf': 'hotpink',
         'supernova': 'darkorange'
     }
-    print(100, amp_measures)
-    print(101, datas[0].shape)
+    #print(100, amp_measures)
+    #print(101, datas[0].shape)
 
     if not hrss:
         axs.set_xlabel(f'SNR', fontsize=20)
@@ -106,7 +106,7 @@ def amp_measure_vs_far_plotting(
         axs.set_xlabel(f'hrss', fontsize=20)
 
     axs.set_ylabel('Final metric value, a.u.', fontsize=20)
-
+    populate = dict()
     for k in range(len(datas)):
         data = datas[k]
         amp_measure = amp_measures[k]
@@ -117,14 +117,16 @@ def amp_measure_vs_far_plotting(
                 data).float().to(DEVICE)).detach().cpu().numpy()
         else:
             fm_vals = np.dot(data, metric_coefs)
-        print(120, fm_vals)
+        #print(120, fm_vals)
         fm_vals = np.apply_along_axis(lambda m: np.convolve(m, np.ones(5)/5, mode='same'),
             axis=1,
             arr=fm_vals)
-        print(124, fm_vals)
+        #print(124, fm_vals)
         fm_vals = np.min(fm_vals, axis=1)
-        print(126, fm_vals)
+        #print(126, fm_vals)
         #if not hrss:
+        #print("IN ORIGINAL FUNCTION", tag, fm_vals, amp_measure)
+        populate[tag] = fm_vals
         amp_measure_plot, means_plot, stds_plot = calculate_means(
             fm_vals, amp_measure, bar=SNR_VS_FAR_BAR)
         # else:
@@ -144,10 +146,10 @@ def amp_measure_vs_far_plotting(
         }
         tag_ = rename_map[tag]
 
-        axs.plot(amp_measure_plot, means_plot - bias, color=colors[tag], label=f'{tag_}', linewidth=2)
+        axs.plot(amp_measure_plot, means_plot, color=colors[tag], label=f'{tag_}', linewidth=2)
         axs.fill_between(amp_measure_plot,
-                         (means_plot - bias) - stds_plot / 2,
-                         (means_plot - bias) + stds_plot / 2,
+                         (means_plot) - stds_plot / 2,
+                         (means_plot) + stds_plot / 2,
                          alpha=0.15,
                          color=colors[tag])
 
@@ -155,7 +157,7 @@ def amp_measure_vs_far_plotting(
         metric_val_label = far_to_metric(
             SNR_VS_FAR_HORIZONTAL_LINES[i], far_hist)
         if metric_val_label is not None:
-            axs.axhline(y=metric_val_label - bias, alpha=0.8**i, label=f'1/{label}', c='black')
+            axs.axhline(y=metric_val_label, alpha=0.8**i, label=f'1/{label}', c='black')
 
     labelLines(axs.get_lines(), zorder=2.5, xvals=(
         15, 20, 15, 30, 35, 40, 25, 30, 35, 40, 45))
@@ -171,6 +173,8 @@ def amp_measure_vs_far_plotting(
     fig.tight_layout()
     plt.savefig(f'{savedir}/{special}.pdf', dpi=300)
     plt.close()
+
+    return populate
 
 
 def fake_roc_plotting(far_hist, savedir):
@@ -507,9 +511,10 @@ def make_roc_curves(
         savedir,
         special,
         bias,
-        smoothing_window=1,
+        smoothing_window=5,
         hrss=False,
-        MLy_colors=False):
+        MLy_colors=False,
+        done_fm_evals = None):
     fig, axs = plt.subplots(1, figsize=(12, 8))
     colors = {
         'bbh': 'steelblue',
@@ -525,26 +530,32 @@ def make_roc_curves(
         axs.set_xlabel(f'hrss', fontsize=20)
 
     axs.set_ylabel('Fraction of events detected at FAR 1/year', fontsize=20)
-
+    #print(528, bias)
     for k in range(len(datas)):
         data = datas[k]
         amp_measure = amp_measures[k]
         tag = tags[k]
 
-        if RETURN_INDIV_LOSSES:
-            fm_vals = metric_coefs(torch.from_numpy(
-                data).float().to(DEVICE)).detach().cpu().numpy()
+        if done_fm_evals == None:
+            if RETURN_INDIV_LOSSES:
+                fm_vals = metric_coefs(torch.from_numpy(
+                    data).float().to(DEVICE)).detach().cpu().numpy()
+            else:
+                fm_vals = np.dot(data, metric_coefs) + bias
+            print(539, fm_vals.shape)
+            if smoothing_window != 1:
+                fm_vals = np.apply_along_axis(
+                    lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
+                    axis=1,
+                    arr=fm_vals)
+            
+            fm_vals = np.min(fm_vals, axis=1)
+            assert False
         else:
-            fm_vals = np.dot(data, metric_coefs)
-
-        if smoothing_window != 1:
-            fm_vals = np.apply_along_axis(
-                lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
-                axis=1,
-                arr=fm_vals)
-
-        fm_vals = np.min(fm_vals, axis=1)
-
+            print(554, "loading from previous")
+            fm_vals = done_fm_evals[tag]
+            
+        print(546, fm_vals.shape)
         rename_map = {
             'background': 'Background',
             'bbh': 'BBH',
@@ -558,8 +569,10 @@ def make_roc_curves(
         tag_ = rename_map[tag]
         metric_val_label = far_to_metric(
             365*24*3600, far_hist) #
+        #print(561, metric_val_label)
+
         #metric_val_label = 3
-        print(557, far_hist, far_hist.sum())
+        #print(557, far_hist, far_hist.sum())
         # snrs = [int(elem) for elem in snrs] #not necessary after update
 
         #positive detection are the ones below the curve
@@ -572,6 +585,7 @@ def make_roc_curves(
         nbins = len(am_bins)
         am_bin_detected = [0]*nbins
         am_bin_total = [0]*nbins
+        #print(577,tag,  amp_measure[:50], fm_vals[:50])
         for i, am in enumerate(amp_measure):
             insert_location = np.searchsorted(am_bins, am)
             #print(am)
@@ -826,7 +840,10 @@ def main(args):
         args.fm_model_path, map_location=GPU_NAME))
     weight = np.concatenate([model.layer.weight.data.cpu().numpy()[0], np.array([0])])
     learned_dp_weights = weight[:]
-
+    
+    linear_weight = model.layer.weight.data.cpu().numpy()
+    print(831, args.fm_model_path)
+    print(weight)
     """
         Factors to keep for the FM
         0 - background AE (L_O * L_R)
@@ -922,9 +939,13 @@ def main(args):
 
         #far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
         #far_hist = np.load(f'output/{VERSION}/1249093442_1249101026_timeslides_GPU0_duration34689600_files-1_timeslide_hist.npy')
-        far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU0_duration9460800_files-1_timeslide_hist.npy')
+        #far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU2_duration37843200_files-1_timeslide_hist.npy')
+        #far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU2_duration37843200_files-1_timeslide_hist.npy')
+        far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU1_duration34689600_files-1_timeslide_hist.npy')
+        
+        #1249093442_1249101026_timeslides_GPU2_duration37843200_files-1_timeslide_hist.npy
 
-        amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+        done_fm_evals = amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
                             [snrs_dict[elem] for elem in X3],
                             model,
                             far_hist,
@@ -932,7 +953,7 @@ def main(args):
                             args.plot_savedir,
                             f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
                             bias)
-
+        print(953, done_fm_evals)
 
         if do_heuristic_efficiency:
             fm_model_path = (f"/output/{VERSION}/trained/fm_model.pt")
@@ -974,9 +995,18 @@ def main(args):
 
             #far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
             #far_hist = np.load(f'output/{VERSION}/1249093442_1249101026_timeslides_GPU0_duration34689600_files-1_timeslide_hist.npy')
-            far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU0_duration9460800_files-1_timeslide_hist.npy')
+            #far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU0_duration9460800_files-1_timeslide_hist.npy')
+            #far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU2_duration37843200_files-1_timeslide_hist.npy')
+            #far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU1_duration34689600_files-1_timeslide_hist.npy')
+            far_hist = np.load(f'output/O3av0/1249093442_1249101026_timeslides_GPU1_duration34689600_files-1_timeslide_hist.npy')
             print(967, far_hist.sum())
             print(968, f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+
+            if RETURN_INDIV_LOSSES:
+                model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
+                model.load_state_dict(torch.load(
+                    args.fm_model_path, map_location=GPU_NAME))
+            
             make_roc_curves([data_dict[elem] for elem in X3],
                                 [snrs_dict[elem] for elem in X3],
                                 model,
@@ -985,7 +1015,8 @@ def main(args):
                                 args.plot_savedir,
                                 f'ROC plots, SNR, window: {SMOOTHING_KERNEL}',
                                 bias,
-                                smoothing_window=SMOOTHING_KERNEL)
+                                smoothing_window=SMOOTHING_KERNEL,
+                                done_fm_evals=done_fm_evals)
             # make_roc_curves([data_dict[elem] for elem in X3],
             #                     [hrss_dict[elem] for elem in X3],
             #                     model,

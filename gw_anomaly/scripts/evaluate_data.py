@@ -132,7 +132,7 @@ def full_evaluation(data_, model_folder_path, device, return_midpoints=False,
     # quak_predictions
     N_batches, N_samples = segments_normalized.shape[
         0], segments_normalized.shape[1]
-    print(134, segments_normalized.shape)
+    #print(134, segments_normalized.shape)
     segments_normalized = torch.reshape(
         segments_normalized, (N_batches * N_samples, 2, SEG_NUM_TIMESTEPS))
 
@@ -232,7 +232,7 @@ def main(args):
 
     data_eval_use_heuristic = False
     if data_eval_use_heuristic:
-        SNRs = np.load(f"{args.data_path[:-4]}_SNR.npz.npy")
+        SNRs = np.load(f"{args.data_path}_SNR.npz.npy")
         # need to get the point of highest score
 
         norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
@@ -287,7 +287,7 @@ def main(args):
             heur_res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
             build_heur_model_evals.append(heur_res)
             # gwak_filtered
-            # build_dataset_strain.append([pearson_, HSS, LSS])
+            # build_dataset_strain.append([pearson_, HSS, LSS  ])
             build_data_gwak_features.append(scaled_evals[i][eval_strongest_loc])
             print(f"Computing heuristic test {i}/{len(data)}, SNR {SNRs[i]}" , end = '\r')
 

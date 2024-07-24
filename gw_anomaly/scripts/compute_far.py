@@ -152,7 +152,7 @@ def main(args):
         data = np.load(args.data_path[0])['data']
         data = torch.from_numpy(data).to(DEVICE)
 
-        reduction = 20  # for things to fit into memory nicely
+        reduction = 40  # for things to fit into memory nicely
 
         timeslide_total_duration = TIMESLIDE_TOTAL_DURATION
         if args.fm_shortened_timeslides:
@@ -209,9 +209,9 @@ def main(args):
             timeslide = timeslide[:, :(timeslide.shape[1] // 1000) * 1000]
             final_values, _ = full_evaluation(
                 timeslide[None, :, :], model_path, DEVICE)
-            print(final_values.shape)
-            print(213, final_values)
-            print('saving, individually')
+            #print(final_values.shape)
+            #print(213, final_values)
+            #print('saving, individually')
             means, stds = torch.mean(
                 final_values, axis=-2), torch.std(final_values, axis=-2)
             means, stds = means.detach().cpu().numpy(), stds.detach().cpu().numpy()

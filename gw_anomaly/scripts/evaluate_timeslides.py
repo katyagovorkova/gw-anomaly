@@ -159,7 +159,7 @@ def heuristic_reweighting_function(x, L=40):
 
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
-    print(159, "starting evaluate_timeslides.py")
+    #print(159, "starting evaluate_timeslides.py")
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
@@ -194,7 +194,7 @@ def main(args):
     not_finished = True
     initial_roll = 0
     while not_finished:
-        print(194, "evaluate_timeslides iteration")
+        #print(194, "evaluate_timeslides iteration")
         data = np.load(args.data_path)
         assert data.shape[0] == 2
         if data.shape[1] < 1e5: return None
@@ -303,7 +303,7 @@ def main(args):
                 indices = torch.where(smoothed_scores < FAR_2days)[0]
 
                 if len(indices) != 0:  # just start the next timeslide, no interesting events
-                    print("FOUND SOME EVENTS")
+                    #print("FOUND SOME EVENTS")
                     indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
 
                     filtered_final_score = smoothed_scores.index_select(0, indices)
@@ -324,7 +324,7 @@ def main(args):
                     timeslide_chunks = timeslide_chunks[edge_check_filter]
 
                     final_gwak_vals = filtered_final_scaled_evals
-                    heuristics_tests = True
+                    heuristics_tests = False
 
                     new_weights = None
                     if heuristics_tests:
@@ -343,28 +343,32 @@ def main(args):
                             new_weights.append(reweighter)
 
                         #assert 0
-                        print("new weights", new_weights)
+                        #print("new weights", new_weights)
                         heuristic_inputs = np.array(heuristic_inputs)
                         
                         # model_heuristic
                         
                         
                         # append it onto the save file
-                        heuristic_save = np.load(f"{args.save_evals_path}_heuristics_data.npy")
-                        heuristic_save = np.vstack([heuristic_save, heuristic_inputs])
-                        #print("accumulated save:", heuristic_save.shape, heuristic_save[-1])
+                        if len(heuristic_inputs) != 0:
+                            heuristic_save = np.load(f"{args.save_evals_path}_heuristics_data.npy")
+                            #print(354, heuristic_save, heuristic_inputs)
+                            #print(heuristic_save.shape, heuristic_inputs.shape)
 
-                        np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristic_save)
+                            heuristic_save = np.vstack([heuristic_save, heuristic_inputs])
+                            #print("accumulated save:", heuristic_save.shape, heuristic_save[-1])
+
+                            np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristic_save)
 
                     if len(filtered_final_score) > 0:
                         final_gwak_vals = combine_freqcorr(final_gwak_vals)
-                        print("final gwak vals", final_gwak_vals, "filt final score", filtered_final_score)
+                       # print("final gwak vals", final_gwak_vals, "filt final score", filtered_final_score)
                         #assert 0
                         #print("final score", filtered_final_score)
 
                         if new_weights is not None:
                             for k in range(len(new_weights)):
-                                print(367, filtered_final_score, new_weights)
+                                #print(367, filtered_final_score, new_weights)
                                 if len(filtered_final_score) == 0:
                                     filtered_final_score[0][k] *= new_weights[k]
                                 else:

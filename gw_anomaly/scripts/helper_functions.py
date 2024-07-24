@@ -1174,9 +1174,9 @@ def far_to_metric(search_time, far_hist):
     # to a specific false alarm rate
     datapoint_to_seconds = SEGMENT_OVERLAP / SAMPLE_RATE
     #total_seconds = far_hist.sum() * datapoint_to_seconds
-    print(1177, far_hist[-1])
+    #print(1177, far_hist[-1])
     total_seconds = far_hist[-1]
-    print(1179, total_seconds, search_time)
+    #print(1179, total_seconds, search_time)
     if not total_seconds > search_time:
         return None
 
