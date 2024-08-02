@@ -6,19 +6,19 @@ import argparse
 def main(args):
 
     input_files = args.input_files
-    # trimming extra brackets and commas
-    input_files = [input_files[0][1:-1], input_files[1][:-1]]
     output = args.output
     
     # if we are running only for one period, no need to do anything,
     # just copy generated data in the final folder
     if len(input_files) == 1:
         os.makedirs(os.path.dirname(output), exist_ok=True)
-        os.system(f'cp {input_files[0]} {os.path.dirname(output)}')
+        os.system(f'cp {input_files[0][1:-1]} {os.path.dirname(output)}')
         return
 
     print(f'Files to merge: {input_files}')
     data_all = [np.load(fname) for fname in input_files]
+
+    input_files = [input_files[0][1:-1], input_files[1][:-1]]
 
     if "clean" in data_all[0].keys():
 
@@ -51,8 +51,6 @@ if __name__ == '__main__':
 
     parser.add_argument('--output', type=str,
                         help='Where to save the file with injections')
+
     args = parser.parse_args()
     main(args)
-
-#/home/eric.moreno/QUAK/real_katya/gw-anomaly/gw_anomaly/output/O3bv0/data_O3b
-#/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/O3av0/data_O3a 
