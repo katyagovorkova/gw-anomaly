@@ -78,14 +78,14 @@ rule fetch_timeslide_data:
         start = {TIMESLIDES_START},
         stop = {TIMESLIDES_STOP}
     output:
-        f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}'
+        directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}')
     shell:
         'mkdir -p {output}; '
         'python3 scripts/fetch_timeslide_data.py {params.start} {params.stop}'
 
 rule generate_data:
     input:
-        omicron = 'output/omicron/',
+        omicron = '/home/katya.govorkova/gw_anomaly/output/omicron/',
         intersections = expand(rules.find_valid_segments.output.save_path,
             period=PERIOD),
     params:
@@ -103,7 +103,7 @@ rule generate_data:
             --start-stop {params.start_stop}'
 
 rule merge_periods:
-    input:
+    params:
         expand(rules.generate_data.output.file,
                dataclass='{dataclass}',
                version='{version}',
@@ -111,7 +111,7 @@ rule merge_periods:
     output:
         'output/{version}/data/{dataclass}.npz'
     shell:
-        'python3 scripts/merge_periods.py {input} \
+        'python3 scripts/merge_periods.py {params} \
             --output {output}'
 
 rule validate_data:
@@ -155,14 +155,14 @@ rule generate_timeslides_for_far:
             --files-to-eval {wildcards.files_to_eval} \
             --timeslide-total-duration {wildcards.timeslide_total_duration} \
             --gpu {wildcards.id} \
-            > {output.log_file}'
+            | tee {output.log_file}'
 
 rule all_timeslides_for_far:
     input:
         expand(rules.generate_timeslides_for_far.output,
-            id=range(4),
+            id=0,
             files_to_eval=-1,
-            timeslide_total_duration=9460800) # 3600*24*365*1.2/4
+            timeslide_total_duration=9460800*4) # 3600*24*365*1.2/4
 
 rule evaluate_signals:
     input:
@@ -173,7 +173,7 @@ rule evaluate_signals:
                              dataclass='{signal_dataclass}',
                              datalocation=DATA_LOCATION),
     params:
-        from_saved_models = False,
+        from_saved_models = False,  
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
@@ -289,7 +289,7 @@ rule compute_far:
 rule merge_far_hist:
     input:
         inputs = expand(rules.compute_far.output.save_path,
-            far_id=[0,1,2,3],
+            far_id=[1],
             version=VERSION),
     output:
         save_path = f'output/{VERSION}/far_bins.npy'
@@ -316,7 +316,7 @@ rule plot_results:
     input:
         dependencies = [rules.merge_far_hist.output.save_path,
             expand(rules.evaluate_signals.output.save_file,
-                signal_dataclass=fm_training_classes,
+                signal_dataclass=dataclasses,
                 version=VERSION)],
         fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
     params:

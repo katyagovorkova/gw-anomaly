@@ -11,11 +11,14 @@ def main(args):
     # if we are running only for one period, no need to do anything,
     # just copy generated data in the final folder
     if len(input_files) == 1:
-        os.system(f'cp {input_files} {output}')
+        os.makedirs(os.path.dirname(output), exist_ok=True)
+        os.system(f'cp {input_files[0][1:-1]} {os.path.dirname(output)}')
         return
 
     print(f'Files to merge: {input_files}')
     data_all = [np.load(fname) for fname in input_files]
+
+    input_files = [input_files[0][1:-1], input_files[1][:-1]]
 
     if "clean" in data_all[0].keys():
 

@@ -3,12 +3,12 @@ import numpy as np
 import argparse
 import torch
 
-from helper_functions import mae_torch, freq_loss_torch
-from models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT, LSTM_AE_SPLIT_precompute, LSTM_AE_SPLIT_use_precomputed
+from gw_anomaly.scripts.helper_functions import mae_torch, freq_loss_torch
+from gw_anomaly.scripts.models import LSTM_AE, LSTM_AE_SPLIT, DUMMY_CNN_AE, FAT, LSTM_AE_SPLIT_precompute, LSTM_AE_SPLIT_use_precomputed
 
 import sys
-sys.path.append(
-    os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
+# sys.path.append(
+    # os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from config import (NUM_IFOS,
                     SEG_NUM_TIMESTEPS,
                     BOTTLENECK,

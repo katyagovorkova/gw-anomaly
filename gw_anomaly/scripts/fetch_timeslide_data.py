@@ -15,7 +15,8 @@ from config import (
     SAMPLE_RATE,
     BANDPASS_HIGH,
     BANDPASS_LOW,
-    VERSION
+    VERSION,
+    PERIOD
     )
 from helper_functions import clean_gw_events
 DEVICE = torch.device(GPU_NAME)
@@ -81,7 +82,7 @@ def main(args):
     except FileExistsError:
         None
 
-    valid_segments = np.load(f'output/{VERSION}_intersections.npy')
+    valid_segments = np.load(f'output/{PERIOD}_intersections.npy')
 
     for seg in valid_segments:
             a, b = seg

@@ -11,21 +11,23 @@ from utils.snapshotter import SnapshotWhitener
 from utils.trigger import Searcher, Trigger
 
 from ml4gw.transforms import SpectralDensity, Whiten
-
+import matplotlib.pyplot as plt
 import os
 import sys
 sys.path.append(
     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
-from scripts.models import LSTM_AE_SPLIT as architecture
+# #from scripts.models import LSTM_AE_SPLIT as architecture
+from scripts.entire_gwak_model import FullGWAK as architecture
 
 @torch.no_grad()
 def main(
     architecture: Callable = architecture,
     outdir: Path = '.',
-    weights_path: Path = '/home/katya.govorkova/gw_anomaly/output/O3av2/trained/models/bbh.pt',
+    weights_path: Path = '/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/O3av0/trained/',
     datadir: Path = '/dev/shm/kafka',
     ifos: List[str] = ['H1', 'L1'],
-    channel: str = 'GDS-CALIB_STRAIN_CLEAN',
+    #channel: str = 'GDS-CALIB_STRAIN_CLEAN',
+    channel: str = "DCS-ANALYSIS_READY_C01:1",
     sample_rate: float = 4096,
     kernel_length: float = 200/4096,
     inference_sampling_rate: float = 4096,
@@ -36,10 +38,10 @@ def main(
     fftlength: Optional[float] = None,
     highpass: Optional[float] = None,
     refractory_period: float = 8,
-    far_per_day: float = 1,
-    secondary_far_threshold: float = 24,
+    far_per_day: float = -5, # change to +2
+    secondary_far_threshold: float = 24,    
     server: str = "test",
-    ifo_suffix: str = None,
+    ifo_suffix: str = "O3ReplayMDC",
     input_buffer_length=5,
     output_buffer_length=8,
     verbose: bool = False,
@@ -59,7 +61,8 @@ def main(
     print(f"Build network and loading weights from {weights_path}")
 
     # gwak setup
-    gwak = architecture(num_ifos, 200, 4).to(f'cuda:{GPU}')
+    #gwak = architecture(num_ifos, 200, 4).to(f'cuda:{GPU}')
+    gwak =  architecture(weights_path)
     fftlength = fftlength or kernel_length + fduration
     whitener = SnapshotWhitener(
         num_channels=num_ifos,
@@ -72,10 +75,11 @@ def main(
         highpass=highpass,
     )
     current_state = whitener.get_initial_state().to(f'cuda:{GPU}')
-
-    weights = torch.load(weights_path)
-    gwak.load_state_dict(weights)
-    gwak.eval()
+    #print(77, current_state.shape)
+    
+    # weights = torch.load(weights_path)
+    # gwak.load_state_dict(weights)
+    # gwak.eval()
 
     # Amplfi setup. Hard code most of it for now
     spectral_density = SpectralDensity(
@@ -143,6 +147,8 @@ def main(
     integrated = None  # need this for static linters
     last_event_written = True
     last_event_time = 0
+    #print(data_it)
+    
     for X, t0, ready in data_it:
         # adjust t0 to represent the timestamp of the
         # leading edge of the input to the network
@@ -203,12 +209,24 @@ def main(
             current_state = whitener.get_initial_state().to(f'cuda:{GPU}')
             buffer.reset_state()
             in_spec = True
+        print(211, current_state.shape)
 
+        #x0 = X.cpu().detach().numpy()
+        #plt.plot(x0[0, :])
+        #plt.savefig("./example.pdf")
+        #plt.close()
         X = X.to(f'cuda:{GPU}')
+        #print(212, X.shape)
         batch, current_state, full_psd_present = whitener(X, current_state)
         print(f'Batch shape is {batch.shape}')
-        y = gwak(batch)[:,0,0]
+        y, _ = gwak.evaluate_data(batch)#[:,0,0]
+        #print(222, y.shape)
+        y = y[:, 0] # remove dummy dimension
+        #print(211, y.shape)
+
+        y *= -1 # invert to conform to how aframe does things
         print(f'OUTPUT shape is {y.shape}')
+        #print("output", min(y))
         integrated = buffer.update(
             input_update=X,
             output_update=y,
@@ -216,12 +234,13 @@ def main(
             input_time_offset=0,
             output_time_offset=time_offset + integration_window_length,
         )
-
+        print(234, integrated)
         event = None
         # Only search if we had sufficient data to whiten with
         # and if frames were analysis ready
         if full_psd_present and ready:
             event = searcher.search(integrated, t0 + time_offset)
+            print("EVENTEVENTEVENTEVNET", event)
 
         if event is not None:
             trigger = get_trigger(event)
