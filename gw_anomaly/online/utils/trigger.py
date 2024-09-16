@@ -94,10 +94,11 @@ class Searcher:
         #     logging.info(
         #         "FAR {}/day threshold is {:0.3f}".format(far, threshold)
         #     )
+        self.thresholds = [-5]
 
-        # self.inference_sampling_rate = inference_sampling_rate
-        # self.refractory_period = refractory_period
-        # self.last_detection_time = time.time() - self.refractory_period
+        self.inference_sampling_rate = inference_sampling_rate
+        self.refractory_period = refractory_period
+        self.last_detection_time = time.time() - self.refractory_period
         self.detecting = False
 
     def check_refractory(self, value):
@@ -141,29 +142,29 @@ class Searcher:
 
         # if we're already mid-detection, take as
         # the event the max in the current window
-        max_val = y.max()
+        min_val = y.min()
         if self.detecting:
-            idx = np.argmax(y)
+            idx = np.argmin(y)
             self.detecting = False
             return self.build_event(max_val, t0, idx)
 
         # otherwise check all of our thresholds to
         # see if we have an event relative to any of them
-        if not (max_val >= self.thresholds).any():
+        if not (min_val <= self.thresholds).any():
             # if not, nothing to do here
             return None
 
         logging.info(
-            f"Detected event with detection statistic>={max_val:0.3f}"
+            f"Detected event with detection statistic<={min_val:0.3f}"
         )
 
         # check if the integrated output is still
         # ramping as we get to the end of the frame
-        idx = np.argmax(y)
+        idx = np.argmin(y)
         if idx < (len(y) - 1):
             # if not, assume the event is in this
             # frame and build an event around it
-            return self.build_event(max_val, t0, idx)
+            return self.build_event(min_val, t0, idx)
         else:
             # otherwise, note that we're mid-event but
             # wait until the next frame to mark it
@@ -206,7 +207,7 @@ class Trigger:
         ifo_suffix: str = None,
     ):
         gpstime = event.gpstime
-        event_dir = self.write_dir / f"event_{int(gpstime)}"
+        event_dir = Path(self.write_dir +'/'+ f"event_{int(gpstime)}")
         event_dir.mkdir(exist_ok=True, parents=True)
         filename = event_dir / f"event-{int(gpstime)}.json"
 
@@ -219,8 +220,8 @@ class Trigger:
 
         logging.info(f"Submitting trigger to file {filename}")
         response = self.gdb.createEvent(
-            group="CBC",
-            pipeline="aframe",
+            group="Burst",
+            pipeline="GWAK",
             filename=str(filename),
             search="AllSky",
         )

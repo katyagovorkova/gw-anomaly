@@ -15,7 +15,7 @@ MODELS_LOCATION = f'output/{VERSION}/trained/models/'
 FM_LOCATION = f'output/{VERSION}/trained/'
 
 # GPU
-GPU_NAME = 'cuda:0'
+GPU_NAME = 'cuda:1'
 
 # Data generation
 IFOS = ['H1', 'L1']
