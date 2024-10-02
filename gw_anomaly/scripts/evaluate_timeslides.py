@@ -21,9 +21,8 @@ from config import (
     SEGMENT_OVERLAP,
     SEG_NUM_TIMESTEPS,
     MODELS_LOCATION#,
-    #GPU_NAME
     )
-#device_str = GPU_NAME
+
 heuristics_tests = True
 import torch.nn as nn
 class BasedModel(nn.Module):
@@ -61,14 +60,16 @@ def compute_signal_strength_chop_sep(x, y):
     psd1 = welch(y)[1]
     HLS = np.log(np.sum(psd0))
     LLS = np.log(np.sum(psd1))
+
     return HLS, LLS
+
 def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
     # works for one window at a time
     Hs = H[H_start:H_end]
     minval = 1
     for shift in range(-maxshift, maxshift):
         Ls = L[H_start+shift:H_end+shift]
-        #minval = min(pearsonr(Hs, Ls)[0], minval)
+
         p = pearsonr(Hs, Ls)[0]
         if p < minval:
             minval = p
@@ -82,6 +83,7 @@ def parse_strain(x):
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
     #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
+
     return long_pearson, HSS, LSS
 
 def event_clustering(indices, scores, spacing, device):
@@ -89,7 +91,6 @@ def event_clustering(indices, scores, spacing, device):
     Group the evaluations into events, i.e. treat a consecutive sequence
     of low anomaly score as a single event
     '''
-
     clustered = []
     idxs = indices.detach().cpu().numpy()
     cluster = []
@@ -118,7 +119,7 @@ def event_clustering(indices, scores, spacing, device):
         final_points.append(bestval)
     return torch.from_numpy(np.array(final_points)).int().to(device)
 
-def extract_chunks(strain_data, timeslide_num, important_points, device, roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
+def extract_chunks(strain_data, timeslide_num, important_points, device, roll_amount=SEG_NUM_TIMESTEPS, window_size=1024):
     '''
     Important points are indicies into thestrain_data
     '''
@@ -139,18 +140,18 @@ def extract_chunks(strain_data, timeslide_num, important_points, device, roll_am
             # which is divisible by 200, so it should work
             L_start = (point-window_size+L_shift) % timeslide_len
             L_end = (point+window_size+L_shift) % timeslide_len
-            #ENDFLAG = 0
+
             if L_end < L_start:
                 L_selection = np.zeros((2048,))
                 L_selection[:-L_end] = strain_data[1, L_start:]
                 L_selection[-L_end:] = strain_data[1, :L_end]
-                #ENDFLAG = 1
+
             else:
                 L_selection = strain_data[1, L_start:L_end]
 
             fill_strains[idx, 0, :] = H_selection
             fill_strains[idx, 1, :] = L_selection
-            #assert ENDFLAG==0
+
 
     return fill_strains, edge_check_passed
 
@@ -159,10 +160,10 @@ def heuristic_reweighting_function(x, L=40):
 
 def main(args):
     DEVICE = torch.device(f'cuda:{args.gpu}')
-    #print(159, "starting evaluate_timeslides.py")
+
     device_str = f"cuda:{args.gpu}"
     model_heuristic = BasedModel().to(DEVICE)
-    model_heuristic.load_state_dict(torch.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"))
+    model_heuristic.load_state_dict(torch.load(f"{MODELS_LOCATION}/model_heuristic.h5"))
 
     model_path = args.model_path if not args.from_saved_models else \
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
@@ -175,8 +176,8 @@ def main(args):
 
 
     gwak_models_ = load_gwak_models(model_path, DEVICE, device_str)
-    norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
-    fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
+    norm_factors = np.load(f"{MODELS_LOCATION}/norm_factor_params.npy")
+    fm_model_path = (f"{MODELS_LOCATION}/fm_model.pt")
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
     fm_model.load_state_dict(torch.load(
         fm_model_path, map_location=device_str))
@@ -188,13 +189,13 @@ def main(args):
     std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)
 
     roll_amount = SEG_NUM_TIMESTEPS // SEGMENT_OVERLAP
-    
+
 
     ts = time.time()
     not_finished = True
     initial_roll = 0
     while not_finished:
-        #print(194, "evaluate_timeslides iteration")
+
         data = np.load(args.data_path)
         assert data.shape[0] == 2
         if data.shape[1] < 1e5: return None
@@ -225,11 +226,8 @@ def main(args):
 
         data = data.to(DEVICE).float()
 
-        #segments = split_into_segments_torch(data, for_timeslides=True)
         segments = split_into_segments_torch(data)
-        #print(f'segment before norm shape: {segments.shape}')
         segments_normalized = std_normalizer_torch(segments)
-        #print(f'segment norm shape: {segments_normalized.shape}')
 
         RNN_precomputed_all = full_evaluation( # with the extra stuff
                     segments_normalized, model_path, DEVICE,
@@ -242,31 +240,29 @@ def main(args):
         batch_size_ = RNN_precomputed_all['bbh'][1] -4 #only this much going into the eval at once
 
         timeslide = torch.clone(segments_normalized) #std_normalizer_torch(split_into_segments_torch(data, for_timeslides=False))
-        #print(f'timeslide norm shape {timeslide.shape}')
+
         gwak_models = load_gwak_models(model_path, DEVICE, device_str, load_precomputed_RNN=True, batch_size=batch_size_)
 
         for timeslide_num in range(1, n_timeslides + 1):
             computed_hist = None
-            #if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
+            # if timeslide_num != 1: print(f"throughput {total_data_time/(time.time()-ts):.2f} Hz")
             ts = time.time()
 
             if timeslide_num * roll_amount > sample_length * SAMPLE_RATE:
-                #going into degeneracy now, looped all the way around
+                # going into degeneracy now, looped all the way around
                 break
             # roll the segments - note that the windowing already happened
-            #print("185", timeslide[:, :, 1, :].shape, RNN_precomputed['bbh'][:, 128:].shape)
             timeslide[:, :, 1, :] = torch.roll(timeslide[:, :, 1, :], roll_amount, dims=1)
 
             # now roll the intermediate LSTM values
             # 128 comes from the fact that they are stacked. x = torch.cat([Hx, Lx], dim=1),
             # so Lx should have the latter indicies
             RNN_precomputed_for_eval = {}
-            #print("199", timeslide.shape, RNN_precomputed['bbh'].shape)
+
             for key in ["bbh", "sghf", "sglf"]:
                 RNN_precomputed[key][:, 128:] = torch.roll(RNN_precomputed[key][:, 128:], roll_amount, dims=0)
                 RNN_precomputed_for_eval[key] =  RNN_precomputed[key][:-4]
-            #print("in evaluate timeslides, RNN computed value", RNN_precomputed['bbh'][0, 120:136])
-            #print(f'timeslide {timeslide.shape}, rnn {RNN_precomputed_for_eval["bbh"].shape}')
+
             final_values, midpoints = full_evaluation(
                     timeslide[:, :-4, :, :], model_path, DEVICE,
                     return_midpoints=True, loaded_models=gwak_models, grad_flag=False,
@@ -342,47 +338,35 @@ def main(args):
                             reweighter = heuristic_reweighting_function(heur_res)
                             new_weights.append(reweighter)
 
-                        #assert 0
-                        #print("new weights", new_weights)
+
                         heuristic_inputs = np.array(heuristic_inputs)
-                        
+
                         # model_heuristic
-                        
-                        
                         # append it onto the save file
                         if len(heuristic_inputs) != 0:
                             heuristic_save = np.load(f"{args.save_evals_path}_heuristics_data.npy")
-                            #print(354, heuristic_save, heuristic_inputs)
-                            #print(heuristic_save.shape, heuristic_inputs.shape)
-
                             heuristic_save = np.vstack([heuristic_save, heuristic_inputs])
-                            #print("accumulated save:", heuristic_save.shape, heuristic_save[-1])
-
                             np.save(f"{args.save_evals_path}_heuristics_data.npy", heuristic_save)
 
                     if len(filtered_final_score) > 0:
                         final_gwak_vals = combine_freqcorr(final_gwak_vals)
-                       # print("final gwak vals", final_gwak_vals, "filt final score", filtered_final_score)
-                        #assert 0
-                        #print("final score", filtered_final_score)
 
                         if new_weights is not None:
                             for k in range(len(new_weights)):
-                                #print(367, filtered_final_score, new_weights)
+
                                 if len(filtered_final_score) == 0:
                                     filtered_final_score[0][k] *= new_weights[k]
                                 else:
                                     filtered_final_score[k] *= new_weights[k]
                         computed_hist = np.histogram(filtered_final_score, bins=1000, range=(-20, 20))[0]
 
-                        #gwak histogram
+                        # gwak histogram
                         gwak_histogram = np.load(f"{args.save_evals_path}_timeslide_gwak_hist.npy")
-                        #print("340", gwak_histogram.shape, final_gwak_vals.shape)
                         for k in range(11):
                             computed_gwak_hist = np.histogram(final_gwak_vals[:, k], bins=1000, range=(-20, 20))[0]
                             gwak_histogram[k,:]  = gwak_histogram[k, :] + computed_gwak_hist
                         np.save(f"{args.save_evals_path}_timeslide_gwak_hist.npy", gwak_histogram)
-                        
+
             timeslide_hist = np.load(f"{args.save_evals_path}_timeslide_hist.npy")
             if computed_hist is not None:
                 timeslide_hist += computed_hist
@@ -400,7 +384,7 @@ def main(args):
                                 # could do 1, but then the inputs aren't so different, and with 10 this gives
                                 # a maximum potential of ~172 years per hour, which should be enough
             # if initial_roll > 200...reduce it
-        
+
 
 if __name__ == '__main__':
 
@@ -444,7 +428,6 @@ if __name__ == '__main__':
 
 
     folder_path = args.data_path
-    #p = np.random.permutation(len(os.listdir(folder_path)))
 
     print("N files", args.files_to_eval)
     save_evals_path = args.save_evals_path
@@ -456,7 +439,5 @@ if __name__ == '__main__':
         if filename.endswith('.npy'):
 
             args.data_path = os.path.join(folder_path, filename)
-            #args.save_evals_path = f"{save_evals_path}"
-            #os.makedirs(args.save_evals_path, exist_ok=True)
             main(args)
             print(f'Finished running on {filename}')

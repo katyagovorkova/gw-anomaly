@@ -4,8 +4,7 @@ import torch
 import torch.nn as nn
 import os
 import torch.optim as optim
-#from config import GPU_NAME
-GPU_NAME = "cuda:2"
+from config import GPU_NAME
 device = torch.device(GPU_NAME)
 
 class HeuristicModel(nn.Module):
@@ -21,7 +20,7 @@ class HeuristicModel(nn.Module):
         x = self.activation(x)
         x = self.layer2(x)
         return self.activation(x)
-    
+
 class BasedModel(nn.Module):
     def __init__(self):
         super(BasedModel, self).__init__()
@@ -30,7 +29,7 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-        
+
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
@@ -42,7 +41,7 @@ class BasedModel(nn.Module):
 
 
 # TODO: reconfigure the path
-# this is the folder which contains the necessary training data, i.e. the signal evaluations with heuristics   
+# this is the folder which contains the necessary training data, i.e. the signal evaluations with heuristics
 # it should be written to by the function in       process_heuristic_training_data.py
 # as well as the function to evaluate the signals in      evaluate_data.py  (this is described as process_heuristic_training_data.py)
 data_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/O3av2/evaluated/heuristic/"
@@ -64,7 +63,7 @@ signal_data = {}
 for elem in os.listdir(data_path):
     if elem == "real_bkg_data.npy": continue
     class_name = elem.split("_")[0]
-    if class_name != "bkg": 
+    if class_name != "bkg":
         class_name = elem.split("_")[0]
         signal_data[class_name] = [[],[]]
 
@@ -75,7 +74,7 @@ for elem in os.listdir(data_path):
     class_name = elem.split("_")[0]
     tag = elem.split("_")[1]
 
-    if class_name == "bkg": 
+    if class_name == "bkg":
         if tag == "gwak":
             bkg_data[1] = extract(data)
         elif tag == "metric":
@@ -164,7 +163,7 @@ training_history = {
 def acc(model_pred, class_name, bar=0.5):
     if class_name == "bkg":
         return torch.sum(model_pred > bar) / len(model_pred)
-    
+
     return torch.sum(model_pred < bar) / len(model_pred)
 
 if 1:
@@ -188,28 +187,25 @@ if not saved_model:
             start = batch_num * sig_batch_size
             end = start + sig_batch_size
             sig_batch = sig_data[start:end]
-            
+
             output = model(sig_batch)
             loss_sig = sig_loss_function(output)
 
             start = batch_num * bkg_batch_size
             end = start + bkg_batch_size
             bkg_batch = bkg_data[start:end]
-            #optimizer.zero_grad()
             output = model(bkg_batch)
             loss_bkg = bkg_loss_function(output, fm_vals[start:end]) * 4
-            #print("188", loss_sig.item(), loss_bkg.item())
-            #special_loss = sig_loss_function(model(special)) * 0.15
+
             epoch_train_loss += loss_sig.item()
             epoch_train_loss += loss_bkg.item()
             epoch_sig_loss += loss_sig.item()
             epoch_bkg_loss += loss_bkg.item()
-            #epoch_train_loss += special_loss.item()
-            #special_loss.backward()
+
             loss_sig.backward()
             loss_bkg.backward()
             optimizer.step()
-            
+
         n_val_batches = 5
         val_loss = 0
         val_len = len(bkg_data_val)
@@ -230,8 +226,6 @@ if not saved_model:
 
         print(f"train acc: bkg {train_bkg_acc:.3f} signal {train_sig_acc:.3f}, val acc: bkg {val_bkg_acc:.3f} signal {val_sig_acc:.3f} ")
         print(f"my precious", (model(special)))
-        #if model(torch.from_numpy(together).float().to(device)).item() > 0.48:
-        #    break
     torch.save(model.state_dict(), model_save_path)
 if 0:
     print("final")
@@ -248,10 +242,7 @@ def make_roc_curve(bkg_evals, sig_evals, return_data=False):
     for thresh in np.linspace(0, 1.01, 100):
         points.append([(bkg_evals < thresh).sum()/len(bkg_evals),
                        (sig_evals < thresh).sum()/len(sig_evals) ])
-    #points2 = []
-    #for thresh in [0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55]:
-    #    points2.append([(bkg_evals < thresh).sum()/len(bkg_evals),
-    #                   (sig_evals < thresh).sum()/len(sig_evals) ])
+
     points = np.array(points)
     if return_data:
         return points
@@ -259,15 +250,12 @@ def make_roc_curve(bkg_evals, sig_evals, return_data=False):
     plt.xlabel("FPR")
     plt.ylabel("TPR")
 
-    #for i, elem in enumerate(points2):
-    #    plt.scatter(elem[0], elem[1], label = "cutoff" + str([0.3, 0.35, 0.4, 0.42, 0.435, 0.45, 0.5, 0.52, 0.55][i]))
-    #plt.loglog()
     plt.legend()
-    #plt.ylim(0.85, 1.01)
+
     plt.grid()
     plt.xscale("log")
     plt.savefig(f"output/plots/ROC_heuristic.png", dpi=300)
-    
+
     plt.close()
 
 def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
@@ -279,25 +267,16 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
     axs[0].set_ylabel("count")
 
     if save_class == "bkg":
-        #print(model_pred.shape, fm_vals.shape)
         mult = 1
         bins = np.linspace(min(fm_vals*mult)-0.5, max(fm_vals*mult)+0.5, 150)[:, 0]
-        #print("bins", bins)
         counts = np.zeros(bins.shape)
         post_heur_counts = np.zeros(bins.shape)
-        #print((fm_vals*mult).shape); assert 0
         for i, elem in enumerate(fm_vals*mult):
             k = np.searchsorted(bins, elem)
-            #print("ELEM", elem, "\n")
-            #print("k", k)
-            #if i > 50:
-            #    assert 0
             counts[k] += 1
             if model_pred[i] < 0.5:
                 post_heur_counts[k] += 1
 
-        #print(counts)
-        #print(post_heur_counts)
         axs[1].plot(bins, counts, label = "original bin counts")
         axs[1].plot(bins, post_heur_counts, label = "passed heuristics")
         axs[1].legend()
@@ -305,17 +284,9 @@ def heuristic_cut_performance_plot(model_pred, fm_vals, save_class="bkg"):
         axs[1].set_xlabel("final metric score")
         axs[1].set_ylabel("count")
 
-
-
     fig.savefig(f"output/plots/heuristic_cut_{save_class}.png", dpi=300)
     plt.close()
 
-#[-6.799029]
-
-#print(together.shape)
-#assert 0
-#plt.scatter(model(bkg_data_val).detach().cpu().numpy(), orig[bkg_val_cut:])
-#plt.savefig(f"output/plots/scatterman.png", dpi=300)
 if saved_model:
     bkg_eval = np.load("output/plots/bkg_eval.npy")
     sig_eval = np.load("output/plots/sig_eval.npy")
@@ -329,7 +300,7 @@ else:
     bkg_eval = model(bkg_data_val).detach().cpu().numpy()
     sig_eval = model(sig_data_val).detach().cpu().numpy()
     sig_keys = sig_keys
-    
+
 if 1:
     make_roc_curve(bkg_eval, sig_eval)
     heuristic_cut_performance_plot(bkg_eval, orig[bkg_val_cut:], "bkg")
@@ -353,7 +324,7 @@ for i in range(6):
     axs[i%3, i//3].set_xscale("log")
     axs[i%3, i//3].set_xlim(1e-5, 1e-2)
     axs[i%3, i//3].set_ylim(0.8, 1.01)
-    
+
     #if i == 0:
     axs[i%3, i//3].legend()
     if i//3 == 0:
@@ -363,21 +334,3 @@ for i in range(6):
 
 fig.savefig(f"output/plots/signal_cut_effic.png", dpi=300)
 plt.close()
-
-if 0:
-    print(model.layer1.weight)
-    print(model.layer1.bias)
-    print(model.layer2.weight)
-    print(model.layer2.bias)
-if 0:
-    print(model.layer1.weight)
-    print(model.layer1.bias)
-    print()
-    print(model.layer2_1.weight)
-    print(model.layer2_1.bias)
-    print()
-    print(model.layer2_2.weight)
-    print(model.layer2_2.bias)
-    print()
-    print(model.layer2_3.weight)
-    print(model.layer2_3.bias)

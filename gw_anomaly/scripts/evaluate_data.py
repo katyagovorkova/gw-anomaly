@@ -226,7 +226,7 @@ def main(args):
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = output.cpu().numpy()
     np.save(args.save_path, result)
 
-    model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
+    model_path = f"{MODELS_LOCATION}/model_heuristic.h5"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path))
 
@@ -235,9 +235,9 @@ def main(args):
         SNRs = np.load(f"{args.data_path}_SNR.npz.npy")
         # need to get the point of highest score
 
-        norm_factors = np.load(f"output/{VERSION}/trained/norm_factor_params.npy")
+        norm_factors = np.load(f"{MODELS_LOCATION}/norm_factor_params.npy")
 
-        fm_model_path = (f"output/{VERSION}/trained/fm_model.pt")
+        fm_model_path = (f"{MODELS_LOCATION}/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -260,7 +260,7 @@ def main(args):
         build_heur_model_evals = []
         build_data_gwak_features = []
         SNRs__ = []
-        print("201", scaled_evals.shape)
+
         #gwak_filtered = extract(scaled_evals)
         for i in range(len(data)):
             #strain_center = midpoints[strongest[i]]
@@ -268,10 +268,10 @@ def main(args):
             strain_center = 7300
             eval_strongest_loc = 144
             if args.save_path[:-4].split("/")[-1] == "wnbhf_varying_snr_evals":
-                strain_center = 9300 
+                strain_center = 9300
                 eval_strongest_loc = 184
             elif args.save_path[:-4].split("/")[-1] == "wnblf_varying_snr_evals":
-                strain_center = 9400 
+                strain_center = 9400
                 eval_strongest_loc = 186
             elif args.save_path[:-4].split("/")[-1] == "supernova_varying_snr_evals":
                 strain_center = 10850
@@ -303,11 +303,6 @@ def main(args):
         np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
         np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_SNRs.npy", np.array(SNRs__))
 
-        print("heuristic dir", heuristic_dir)
-        #passed = np.array(passed)
-        #print("177", passed.sum())
-
-        #np.save(f"{args.save_path[:-4]}_heuristic_res.npy", passed)
 
 if __name__ == '__main__':
 

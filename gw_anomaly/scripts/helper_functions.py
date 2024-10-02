@@ -10,8 +10,6 @@ from scipy.stats import cosine as cosine_distribution
 from gwpy.timeseries import TimeSeries
 from lalinference import BurstSineGaussian, BurstSineGaussianF
 
-# sys.path.append(
-#     os.path.abspath(os.path.join(os.path.dirname(__file__), os.path.pardir)))
 from gw_anomaly.scripts.models import LSTM_AE_SPLIT, FAT, LinearModel, LSTM_AE_SPLIT_use_precomputed
 
 from config import (

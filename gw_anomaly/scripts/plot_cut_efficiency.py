@@ -54,8 +54,8 @@ def main(args):
     generated_snr = np.load(args.generated_data_path[:-4] + "_SNR.npz.npy")  
     data_eval = np.load(args.eval_data_path)
 
-    fm_model_path = "/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt"
-    norm_factors_path = "/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy"
+    fm_model_path = f"{MODELS_LOCATION}/fm_model.pt"
+    norm_factors_path = f"{MODELS_LOCATION}/norm_factor_params.npy"
 
     scaled_evals, unscaled_evals, fm_vals, (weight, bias) = process_linear_fm(data_eval, fm_model_path, norm_factors_path, DEVICE)
     
@@ -127,10 +127,6 @@ def main(args):
 
     axs[0, 0].scatter(generated_snr, psd_scores)
     axs[0, 0].set_ylabel("PSD feature")
-    #means, stds = get_mean_std_line(snr_bins, freq_corr_contrib, psd_scores)
-    #axs[0, 0].plot(snr_bins, means, c="black", linewidth=3, label = "mean")
-    #axs[0, 0].fill_between(snr_bins, means-stds*0.5, means+stds*0.5, alpha=0.4, color="red", label = "1 std region")
-    #axs[0, 0].legend()
 
     axs[0, 1].scatter(generated_snr, freq_corr_contrib)
     axs[0, 1].set_ylabel("scaled freq corr")

@@ -436,8 +436,8 @@ def main(args):
         hist = np.load(f"{args.savedir}/far_hist.npy")
 
     # hist assembled by this point
-
-    data_path = "/home/katya.govorkova/gw-anomaly/output/O3av2/data/"
+    import DATA_LOCATION
+    data_path = DATA_LOCATION
     plotting_data = np.load(f"{data_path}/bbh_varying_snr.npz")['data']
     plotting_data = np.swapaxes(plotting_data, 1, 2)
     SNRs = np.load(f"{data_path}/bbh_varying_snr_SNR.npz.npy")

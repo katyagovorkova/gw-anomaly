@@ -246,8 +246,7 @@ def whiten_bandpass_resample(
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
-    # why is it in plots, Ryan??
-    heuristic_model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
+    heuristic_model_path = f"{MODELS_LOCATION}/model_heuristic.h5"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(heuristic_model_path, map_location=DEVICE))
 
@@ -265,10 +264,10 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         data = data_[:, start:end]
 
         model_path = ["bbh.pt",
-                        "sglf.pt",
-                        "sghf.pt",
-                        "background.pt",
-                        "glitches.pt"]
+                      "sglf.pt",
+                      "sghf.pt",
+                      "background.pt",
+                      "glitches.pt"]
 
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
@@ -276,9 +275,9 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
         kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
         kernel = kernel[None, :, :]
-        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+        norm_factors = np.load(f"{MODELS_LOCATION}/norm_factor_params.npy")
 
-        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = (f"{MODELS_LOCATION}/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -504,7 +503,7 @@ def main(args):
         None
 
     #valid_segments = np.load('/home/katya.govorkova/gw-anomaly/output/O3b_intersections.npy')
-    valid_segments = np.load("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/O3b_intersections.npy")
+    valid_segments = np.load("/home/katya.govorkova/gw_anomaly/output/O3b_intersections.npy")
     trained_path = '/home/katya.govorkova/gwak-paper-final-models/'
 
     run_short_test = False

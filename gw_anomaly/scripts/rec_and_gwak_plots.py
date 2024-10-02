@@ -395,7 +395,6 @@ def main(args):
         [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
 
     fm_model_path = args.fm_model_path  # if not args.from_saved_fm_model else \
-        # os.path.join(MODELS_LOCATION, os.path.basename(args.fm_model_path))
 
     model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
@@ -465,38 +464,6 @@ def main(args):
                                 None,
                                 f'{args.savedir}/{class_label}/',
                                 class_label)
-
-    # SNR_ind = 4
-    # corner_plot_data = [0] * len(CLASS_ORDER)
-
-    # for class_label in CLASS_ORDER:
-    #     class_index = CLASS_ORDER.index(class_label)
-    #     if class_label in ['sghf', 'sglf', 'bbh']:
-    #         corner_plot_data[class_index] = loss_values_SNR[
-    #             class_label][SNR_ind]
-
-    #     else:
-    #         assert class_label in ['glitches', 'background']
-    #         corner_plot_data[class_index] = loss_values[class_label]
-    #     corner_plot_data[class_index] = stack_dict_into_tensor(
-    #         corner_plot_data[class_index]).cpu().numpy()  # [p]#[:, ]
-    #     means, stds_ = np.load(
-    #         'output/trained/norm_factor_params.npy')
-    #     corner_plot_data[class_index] = np.delete(corner_plot_data[class_index], FACTORS_NOT_USED_FOR_FM, -1)
-    #     corner_plot_data[class_index] = (
-    #         corner_plot_data[class_index] - means[:-1]) / stds_[:-1]
-    #     all_dotted = np.zeros(
-    #         (len(corner_plot_data[class_index]), len(CLASS_ORDER)))
-    #     for i in range(len(CLASS_ORDER)):
-    #         dotted = np.dot(corner_plot_data[class_index], weights[i])
-    #         all_dotted[:, i] = dotted
-    #     corner_plot_data[class_index] = all_dotted
-    #     corner_plot_data[class_index] = corner_plot_data[class_index][
-    #         np.random.permutation(len(corner_plot_data[class_index]))]
-    #     print(corner_plot_data[class_index].shape)
-    # print(corner_plot_data)
-    # print('class order', CLASS_ORDER)
-    # corner_plotting(corner_plot_data, CLASS_ORDER, f'{args.savedir}', SNR_ind=SNR_ind, loglog=False, enforce_lim=False)
 
 
 if __name__ == '__main__':

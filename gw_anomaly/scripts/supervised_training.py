@@ -251,11 +251,6 @@ def main(args):
         plt.savefig(f'{args.savedir}/loss.pdf', dpi=300)
 
 
-
-
-
-
-
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -274,9 +269,6 @@ if __name__ == '__main__':
     parser.add_argument('--gpu', type=str, default='1',
                         help='On which GPU to run')
 
-    
-
-    args = parser.parse_args()
-    #args.fm_shortened_timeslides = args.fm_shortened_timeslides == 'True'
+        args = parser.parse_args()
 
     main(args)

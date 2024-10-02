@@ -17,6 +17,7 @@ from scripts.helper_functions import far_to_metric, compute_fars, \
                             load_gwak_models, joint_heuristic_test, \
                                 combine_freqcorr
 from config import (
+    FM_LOCATION,
     CHANNEL,
     GPU_NAME,
     SEGMENT_OVERLAP,
@@ -41,7 +42,7 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-        
+
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
@@ -79,7 +80,7 @@ def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
         if p < minval:
             minval = p
             shift_idx = shift
-        
+
     return minval, shift_idx
 
 def parse_strain(x):
@@ -88,7 +89,7 @@ def parse_strain(x):
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
     #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
-    return long_pearson, HSS, LSS 
+    return long_pearson, HSS, LSS
 
 def sig_prob_function(evals, scale=40):
     sigmoid = lambda x: 1/(1+np.exp(-x))
@@ -103,13 +104,11 @@ class FullGWAK():
 
     def load_models(self, models_location):
         # load the GWAK autoencoders
-        model_path = ["output/O3av2/trained/models/bbh.pt", 
-                    "output/O3av2/trained/models/sglf.pt", 
-                    "output/O3av2/trained/models/sghf.pt", 
-                    "output/O3av2/trained/models/background.pt",
-                        "output/O3av2/trained/models/glitches.pt"]
-        MODELS_LOCATION = "/home/katya.govorkova/gwak-paper-final-models/trained/models/"
-        models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
+        model_path = [f"{MODELS_LOCATION}/bbh.pt",
+                      f"{MODELS_LOCATION}/sglf.pt",
+                      f"{MODELS_LOCATION}/sghf.pt",
+                      f"{MODELS_LOCATION}/background.pt",
+                      f"{MODELS_LOCATION}/glitches.pt"]
         self.gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
         self.models_path = models_path
 
@@ -122,9 +121,9 @@ class FullGWAK():
         kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
         self.kernel = kernel[None, :, :]
 
-        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
+        norm_factors = np.load(f"{FM_LOCATION}/norm_factor_params.npy")
 
-        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
+        fm_model_path = (f"{FM_LOCATION}/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -136,9 +135,9 @@ class FullGWAK():
         norm_factors = norm_factors[:, :-1]
         self.mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
         self.std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
-        
+
     def load_heuristic(self):
-        model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
+        model_path = f"{MODELS_LOCATION}/model_heuristic.h5"
         self.model_heuristic = BasedModel().to(DEVICE)
         self.model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 

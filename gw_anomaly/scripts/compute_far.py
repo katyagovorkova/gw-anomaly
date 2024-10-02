@@ -27,7 +27,6 @@ from config import (
 
 def main(args):
 
-    #DEVICE = torch.device(f'cuda:{args.gpu}')
     DEVICE = torch.device(GPU_NAME)
 
     model_path = args.model_path if not args.from_saved_models else \
@@ -100,7 +99,7 @@ def main(args):
             vals = np.array(vals)
             # a trick to not to re-evaluate saved timeslides
             # vals = np.delete(vals, FACTORS_NOT_USED_FOR_FM, -1)
-            #vals = torch.from_numpy(vals).to(DEVICE)
+            # vals = torch.from_numpy(vals).to(DEVICE)
             # flatten batch dimension
             vals = np.reshape(vals, (vals.shape[
                                          0] * vals.shape[1], vals.shape[2]))
@@ -148,7 +147,7 @@ def main(args):
                 update_hist_cpu(all_vals)
 
     else:
-        print(150, DEVICE)
+
         data = np.load(args.data_path[0])['data']
         data = torch.from_numpy(data).to(DEVICE)
 

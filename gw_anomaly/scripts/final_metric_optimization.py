@@ -26,16 +26,12 @@ def optimize_hyperplane(signals, backgrounds):
 
 
     sigs = torch.from_numpy(signals).float().to(DEVICE)
-    # bkgs = torch.from_numpy(backgrounds).float().to(DEVICE)
     network = LinearModel(n_dims=sigs.shape[2]).to(DEVICE)
-    print(31, sigs.shape)
-    print(32, backgrounds.shape)
     optimizer = optim.Adam(network.parameters(), lr=SVM_LR)
 
     new_shape = backgrounds.shape[0]//10
     for i in range(10):
         small_bkgs = torch.from_numpy(backgrounds[i*new_shape:(i+1)*new_shape]).float().to(DEVICE)
-        print(38, small_bkgs.shape)
         for epoch in range(N_SVM_EPOCHS):
             optimizer.zero_grad()
             background_MV = network(small_bkgs)

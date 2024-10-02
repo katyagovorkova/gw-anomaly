@@ -136,11 +136,6 @@ def main(args):
                             axs[i, j].set_xscale("log")
                     fig.tight_layout()
                     fig.savefig(f"{args.savedir}/freq_reco_{class_label}.png")
-                    #print("SAVEPATH", f"{args.savedir}/reco.png")
-
-
-            #return None
-
 
 
 if __name__ == "__main__":

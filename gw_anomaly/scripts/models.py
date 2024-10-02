@@ -442,17 +442,7 @@ class LSTM_AE_SPLIT_use_precomputed(nn.Module):
             seq_len=num_timesteps, n_features=num_ifos, input_dim=BOTTLENECK)
 
     def forward(self, x):
-        t332 = time.time()
         x = self.encoder(x)
-        #print(x[0, 0])
-        #print("XX encoding time", time.time()-t332)
-        #(a(x))
-        #t338 = time.time()
         x = self.decoder(x)
-        
-        #(a(x))
         x = x.transpose(1, 2)
-        #print(x[0, 0, 0])
-        #print("XX decoding time", time.time()-t338)
         return x
-

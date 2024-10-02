@@ -102,21 +102,9 @@ rule generate_data:
             --period {PERIOD} \
             --start-stop {params.start_stop}'
 
-rule merge_periods:
-    params:
-        expand(rules.generate_data.output.file,
-               dataclass='{dataclass}',
-               version='{version}',
-               period=STRAIN_START_STOP)
-    output:
-        'output/{version}/data/{dataclass}.npz'
-    shell:
-        'python3 scripts/merge_periods.py {params} \
-            --output {output}'
-
 rule validate_data:
     input:
-        expand(rules.merge_periods.output,
+        expand(rules.generate_data.output,
                dataclass=modelclasses+dataclasses,
                version=VERSION)
     shell:
@@ -143,7 +131,7 @@ rule generate_timeslides_for_far:
         data_path = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}/',
         dependecy = rules.fetch_timeslide_data.output
     params:
-        from_saved_models = False,
+        from_saved_models = True,
     output:
         save_evals_path = directory(f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'timeslides_GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}/'),
         log_file = f'output/{VERSION}/{TIMESLIDES_START}_{TIMESLIDES_STOP}_'+'GPU{id}_duration{timeslide_total_duration}_files{files_to_eval}.log'
@@ -173,7 +161,7 @@ rule evaluate_signals:
                              dataclass='{signal_dataclass}',
                              datalocation=DATA_LOCATION),
     params:
-        from_saved_models = False,  
+        from_saved_models = True,
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
@@ -204,7 +192,7 @@ rule generate_timeslides_for_fm:
             dataclass=modelclasses,
             version=VERSION),
     params:
-        from_saved_models = False,
+        from_saved_models = True,
         shorten_timeslides = True,
     output:
         save_path = directory(f'output/{VERSION}/timeslides/'),
@@ -270,8 +258,8 @@ rule compute_far:
             dataclass=modelclasses,
             version=VERSION),
     params:
-        from_saved_models = False,
-        from_saved_fm_model = False,
+        from_saved_models = True,
+        from_saved_fm_model = True,
         shorten_timeslides = False,
     output:
         save_path = 'output/{version}/far_bins_{far_id}.npy'
@@ -304,7 +292,7 @@ rule quak_plotting_prediction_and_recreation:
         test_data = expand('{datalocation}/{dataclass}.npz',
                            dataclass='{dataclass}',
                            datalocation=DATA_LOCATION),
-        from_saved_models = False,
+        from_saved_models = True,
         reduce_loss = False,
         save_file = 'output/{VERSION}/evaluated/quak_{dataclass}.npz'
     shell:
@@ -318,9 +306,9 @@ rule plot_results:
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=dataclasses,
                 version=VERSION)],
-        fm_model_path = f'output/{VERSION}/trained/fm_model.pt'
+        fm_model_path = f'{MODELS_LOCATION}/fm_model.pt'
     params:
-        evaluation_dir = f'output/{VERSION}/',
+        evaluation_dir = '/home/katya.govorkova/gwak-paper-final-models/',
         save_path = directory(f'output/{VERSION}/paper/')
     shell:
         'mkdir -p {params.save_path}; '

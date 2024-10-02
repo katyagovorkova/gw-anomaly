@@ -17,8 +17,10 @@ from config import (
     SAMPLE_RATE,
     BANDPASS_HIGH,
     BANDPASS_LOW,
-    FACTORS_NOT_USED_FOR_FM
+    FACTORS_NOT_USED_FOR_FM,
+    MODELS_LOCATION
     )
+
 from helper_functions import far_to_metric, compute_fars
 DEVICE = torch.device(GPU_NAME)
 
@@ -64,7 +66,7 @@ def whiten_bandpass_resample(
         temp = strainL1[-shift_datapoints:]
         strainL1[shift_datapoints:] = strainL1[:-shift_datapoints]
         strainL1[:shift_datapoints] = temp
-    
+
     # Whiten, bandpass, and resample
     strainL1 = strainL1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
     strainL1 = strainL1.whiten()
@@ -83,20 +85,20 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     max_gpu_seconds = 50 # 500 seconds at a time
     max_gpu_dtps = max_gpu_seconds * SAMPLE_RATE
 
-    n_splits = (strain.shape[2] // max_gpu_dtps) + 1 
+    n_splits = (strain.shape[2] // max_gpu_dtps) + 1
     split_data = []
     for n in range(n_splits):
         split_data.append(strain[:, :, n*max_gpu_dtps:(n+1)*max_gpu_dtps])
 
 
-    model_path = f"{trained_path}/trained/models/"
+    model_path = f"{trained_path}/models/"
     model_paths = []
-    for elem in ["background.pt", "bbh.pt",  "glitches.pt", 
+    for elem in ["background.pt", "bbh.pt",  "glitches.pt",
                  "sghf.pt", "sglf.pt"]:
         model_paths.append(f'{model_path}/{elem}')
 
 
-    norm_factors = np.load(f"{trained_path}/trained/norm_factor_params.npy")
+    norm_factors = np.load(f"{trained_path}/norm_factor_params.npy")
 
     device=DEVICE
     evals = []
@@ -108,8 +110,8 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         evals.append(ev)
         midpoints.append(mdp+i*(max_gpu_dtps))
 
-    
-    fm_model_path = (f"{trained_path}/trained/fm_model.pt")
+
+    fm_model_path = (f"{trained_path}/fm_model.pt")
 
     fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     fm_model.load_state_dict(torch.load(
@@ -141,7 +143,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         scaled_evals_.append(np.apply_along_axis(lambda m : np.convolve(m, kernel, mode='same')[bottom_trim:top_trim], axis=0, arr=elem))
     scaled_evals = scaled_evals_
     scaled_evals = np.concatenate(scaled_evals, axis=0) #same indexing as scores
-    #for elem in 
+    #for elem in
     scores = scores_
     midpoints_ = []
     for elem in midpoints:
@@ -165,7 +167,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
 
     far_bins = np.load(f"{trained_path}/far_bins_k{kernel_len}.npy")
-    #far_bins = np.load(f"{trained_path}/far_bins_k{kernel_len}.npy") #for some reason O3b training has a "k" in name
+
     # set a bar at 1/2 days FAR to get elements of interest
     far_bar = far_to_metric(3600*24*2, far_bins)
 
@@ -176,7 +178,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
     for i in range(len(scores)):
         sc = scores[i]
         mdps = midpoints[i]
-        filter = sc<far_bar 
+        filter = sc<far_bar
         chosen_mdps = mdps[filter]
         passed_midpoints.append(chosen_mdps)
 
@@ -222,10 +224,6 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         n_points = left_edge+right_edge
         labels = ['background', 'bbh', 'glitch', 'sglf', 'sghf', 'pearson']
         quak_evals_ts = np.linspace(0, n_points*(SEGMENT_OVERLAP/SAMPLE_RATE), n_points)
-        #if len(evals[loudest-left_edge:loudest+right_edge, i]) != len(quak_evals_ts):
-        #    continue #bypassing edge effects
-
-        
 
         #get rid of edge effects
         if loudest < 200 or loudest > len(scores) - 201:
@@ -248,29 +246,22 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
             if i% 2 == 1:
                 line_type = "--"
             if i % 2 == 0 or labels[i] in ["pearson", "freq corr"]:
-                axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i], 
+                axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i],
                             label = labels[i], c=cols[i//2], linestyle=line_type)
             else:
-                axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i], 
+                axs[1, 0].plot(quak_evals_ts*1000, scaled_evals_[loudest-left_edge:loudest+right_edge, i],
                                 c=cols[i//2], linestyle=line_type)
         best_scores.append(best_score)
         axs[1, 0].plot([], [], '-', label="Hanford", c="gray")
         axs[1, 0].plot([], [], '--', label="Livingston", c="gray")
         axs[1, 0].plot(quak_evals_ts*1000, scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
-        #axs[1, 0].plot([], [], '-', label="Hanford", c="black")
-        #axs[1, 0].plot([], [], '--', label="Livingston", c="black")
         axs[1, 0].legend(handlelength=3, fontsize=17)
         axs[1, 0].set_xlabel("Time, (ms)")
         axs[1, 0].set_ylabel("Final Metric Contribution")
-        
-        #axs[0].legend()
-        #axs[0].set_xlabel('Time, (ms)')
-        #axs[0].set_ylabel('Contribution to final metric')
 
         p = all_midpoints[loudest]
         left_edge, right_edge = left_edge * SEGMENT_OVERLAP, right_edge*SEGMENT_OVERLAP
         strain_ts = np.linspace(0, (right_edge+left_edge)/SAMPLE_RATE, right_edge+left_edge)
-        #print("190", strain_orig.shape, p-left_edge,p+right_edge)
         axs[0, 0].plot(strain_ts*1000,strain_orig[p-left_edge:p+right_edge, 0], label = 'Hanford', alpha=0.8)
         axs[0, 0].plot(strain_ts*1000, strain_orig[p-left_edge:p+right_edge, 1], label = 'Livingston', alpha=0.8)
         axs[0, 0].set_xlabel('Time, (ms)')
@@ -285,9 +276,8 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
         L_strain = data[1][p-left_edge-q_edge:p+right_edge+q_edge]
         t0 = H_strain.t0.value
         dt = H_strain.dt.value
-        #print(p-left_edge-q_edge,p+right_edge+q_edge)
-        #print(p, left_edge, q_edge, t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt)
-        try: 
+
+        try:
             H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
             L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
             f = np.array(H_hq.yindex)
@@ -308,13 +298,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
             axs[1, 1].set_xlabel("Time (ms)")
             axs[1, 1].set_ylabel("Freq (Hz)")
             axs[1, 1].set_title("Livingston Q-Transform")
-            
-            
-            #print(np.array(H_hq))
-            #print(np.array(H_hq).shape)
-            #print(H_hq.shape)
-            #axs[0, 1].imshow()
-            #assert 0
+
             best_far=""
             if far_search != None:
                 far_a, far_b = far_search
@@ -325,16 +309,16 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
                 far_b = far_b[filter][::-1]
                 loc = np.searchsorted(far_b, best_score)
                 best_far = far_a[loc]
-            # = compute_fars(np.array([best_score]), far_bins)[0]
-            #plt.tight_layout()
+
             plt.savefig(f'{savedir}/{start_point}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}{extra}.png', dpi=300, bbox_inches="tight")
             plt.close()
+
             # Open the output file in write mode
             with open(output_file, "a") as file:
                 #write to text file
                 file.write(f"{start_point+p/SAMPLE_RATE}\t\t\t\t\t\t{best_score}\t{best_far}\n")
             file.close()
-        except: 
+        except:
             pass
 
     # save data file with detections in the folder
@@ -343,7 +327,7 @@ def get_evals(data, trained_path, savedir, start_point, extra = "", far_search=N
 
 def parse_gwtc_catalog(path, mingps=None, maxgps=None):
     gwtc = np.loadtxt(path, delimiter=",", dtype="str")
-    
+
 
     pulled_data = np.zeros((gwtc.shape[0]-1, 3))
     for i, elem in enumerate(gwtc[1:]): #first row is just data value description
@@ -359,9 +343,9 @@ def find_segment(gps, segs):
         a, b = seg
         if a < gps and b > gps:
             return seg
-        
+
 def make_metric_vs_far(savepath, bins_path=f"/home/katya.govorkova/gw-anomaly/output/O3bv1/far_bins_k50.npy"):
-    #far_bar = far_to_metric(3600*24*2, far_bins)
+
     search_vals = np.logspace(-3, np.log10(100), 200) # in number per month
     search_vals *= 30*24*3600
 
@@ -370,9 +354,6 @@ def make_metric_vs_far(savepath, bins_path=f"/home/katya.govorkova/gw-anomaly/ou
     for elem in search_vals:
         metric_vals.append(far_to_metric(elem, far_bins))
 
-
-
-    #plt.plot(search_vals/(30*24*3600), metric_vals)
     plt.xscale("log")
     plt.plot(1/search_vals, metric_vals)
 
@@ -392,23 +373,14 @@ def main(args):
     lst = [i[5:] for i in lst if "V1" not in i]
     lst_noduplicates = [*set(lst)]
 
-    #trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
-    trained_path = "/home/katya.govorkova/gw-anomaly/output/O3bv1/"
+    trained_path = MODELS_LOCATION
 
-    #savedir = '/home/eric.moreno/QUAK/katya_v2/gw-anomaly/output/burst_bencmark_training_O3b_4'
     savedir = args.outdir
-    try: 
+    try:
         os.makedirs(savedir)
         print("made dir", savedir)
     except FileExistsError:
         None
-    #savedir = None
-    #A, B = None, None # start and stop of gps time
-
-    #fill it in (or alternative data loading)
-    #assert A is not None and B is not None and savedir is not None
-
-    #data = whiten_bandpass_resample(A, B, savedir, shift=None)
     far_a, far_b = make_metric_vs_far(savedir)
 
     from tqdm import tqdm
@@ -420,94 +392,6 @@ def main(args):
 
         # data is [strain_H1, strain_L1], where each is downsampled, whitened, and bandpassed
         get_evals(data, trained_path, savedir, int(A), far_search=[far_a, far_b])
-
-def IGNORE_main(args):
-
-    gwtc_events=parse_gwtc_catalog("/home/ryan.raikman/s22/forks/katya/gw-anomaly/data/gwtc.csv", 
-                        1238166018, 1253977218)
-
-    valid_segments = np.load("/home/katya.govorkova/gwak-paper-final-models/O3a_intersections.npy")
-    trained_path = "/home/katya.govorkova/gwak-paper-final-models/" # fix hardcoding later
-    #trained_path = "/home/katya.govorkova/gw-anomaly/output/O3av2_non_linear_bbh_only/"
-    savedir = 'output/O3b_GW_focus_find_BBH/'
-
-    segments_to_analyze = []
-    SNRs = []
-    gw_event_times = []
-    for i, gps_time in enumerate(gwtc_events[:, 0]):
-        out = find_segment(gps_time, valid_segments)
-        if out is not None:
-            a, b = out
-            if b-a > 3600:
-                # want exactly 1 hour of data for consistent whitening
-                low = max(gps_time-1800, a)
-                upper = 0
-                if low == a:
-                    upper += 1800-(gps_time-a)
-                high = min(gps_time+1800+upper, b)
-
-                segments_to_analyze.append([low, high])
-                SNRs.append(gwtc_events[i, 1])
-                gw_event_times.append(gps_time)
-
-    if 0:
-        A, B = None,  None
-        target = 1249852257.0
-        target = 1245955943.1
-        target = 1249852257.0   
-        target = 1242459857.4   
-        low, high = valid_segments[0][0], valid_segments[-1][1]
-        #print(target-low, high-target)
-        for seg in valid_segments:
-            a, b = seg
-            if a < target and b>target:
-                A = str(a); B = str(b)
-                break
-        #print(A, B)
-        B = target + 100
-        A = target - 1050
-        print("A, B", A, B)
-        #reduce
-        #assert 0
-        
-        data = whiten_bandpass_resample(A, B, savedir)
-        get_evals(data, trained_path, savedir, int(A))
-    
-    if 0:
-        for seg in valid_segments:
-            a, b = seg
-            A, B = str(a), str(b)
-            if b-a > 500:
-                data = whiten_bandpass_resample(A, B, savedir)
-                get_evals(data, trained_path, savedir, int(A))
-
-    if 1:
-        for i, (a, b) in enumerate(segments_to_analyze):
-            a, b = int(a), int(b)
-            A, B = str(a), str(b)
-            data = whiten_bandpass_resample(A, B, savedir, shift=None)
-            get_evals(data, trained_path, savedir, int(A), extra=f"{gw_event_times[i]}_SNR{SNRs[i]}")
-
-    if 0:
-        _STRAIN_START = 1238166018 # for O3b 1256663958 1238166018
-        _STRAIN_STOP = 1238170289 # for O3b 1256673192 1238170289
-        _STRAIN_START = 1242442967-1800
-        _STRAIN_STOP = 1242442967 + 1800
-        a, b = _STRAIN_START, _STRAIN_STOP
-        A, B = str(a), str(b)
-        data = whiten_bandpass_resample(A, B, savedir, shift=None)
-        get_evals(data, trained_path, savedir, int(A))
-
-
-
-
-    #data = whiten_bandpass_resample('1256663958', '1256665000', savedir)
-    #get_evals(data, trained_path, savedir, 1256663958)
-    # segments = np.load(args.valid_segments)
-    # for valid_segment in segments:
-
-    #     # perform full evaluation
-    #     whiten_bandpass_resample(valid_segment[0], valid_segment[1], savedir)
 
 
 if __name__ == '__main__':
