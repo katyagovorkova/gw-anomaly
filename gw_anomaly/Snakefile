@@ -106,7 +106,8 @@ rule validate_data:
     input:
         expand(rules.generate_data.output,
                dataclass=modelclasses+dataclasses,
-               version=VERSION)
+               version=VERSION,
+               period=PERIOD)
     shell:
         'mkdir -p data/{VERSION}/; '
         'python3 scripts/validate_data.py {input}'
