@@ -143,7 +143,7 @@ class FullGWAK():
         self.model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
     def evaluate_data(self, data):
-        print(146, data.shape)
+
         # given data, run the full gwak evaluation
         final_values, midpoints, original, recreated = full_evaluation(  
                         data[None, :, :, :], self.models_path, DEVICE,
@@ -158,5 +158,5 @@ class FullGWAK():
         scaled_evals = torch.multiply(final_values_slx, self.linear_weights[None, :])[0, :]
         #print("scaled_evals", scaled_evals.shape)
         scores = (scaled_evals.sum(axis=1) + self.bias_value)[:, None]
-        print(161, scores.shape)
+
         return scores, final_values

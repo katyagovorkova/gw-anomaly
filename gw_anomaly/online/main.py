@@ -19,7 +19,7 @@ sys.path.append(
 # #from scripts.models import LSTM_AE_SPLIT as architecture
 from scripts.entire_gwak_model import FullGWAK as architecture
 
-@torch.no_grad()
+# @torch.no_grad()
 def main(
     architecture: Callable = architecture,
     outdir: Path = '.',
@@ -38,9 +38,9 @@ def main(
     fftlength: Optional[float] = None,
     highpass: Optional[float] = None,
     refractory_period: float = 8,
-    far_per_day: float = -5, # change to +2
+    far_per_day: float = -10, # change to +2
     secondary_far_threshold: float = 24,
-    server: str = "test",
+    server: str = "playground",
     ifo_suffix: str = None, #"O3ReplayMDC",
     input_buffer_length=5,
     output_buffer_length=8,
@@ -131,7 +131,6 @@ def main(
     integrated = None  # need this for static linters
     last_event_written = True
     last_event_time = 0
-    print('Got the data!!', data_it)
 
     for X, t0, ready in data_it:
         # adjust t0 to represent the timestamp of the
@@ -196,12 +195,11 @@ def main(
 
         X = X.to(f'cuda:{GPU}')
         batch, current_state, full_psd_present = whitener(X, current_state)
-        print(f'Batch shape is {batch.shape}')
+
         y, _ = gwak.evaluate_data(batch)#[:,0,0]
         y = y[:, 0] # remove dummy dimension
 
-        y *= -1 # invert to conform to how aframe does things
-        print(f'OUTPUT shape is {y.shape}')
+        # y *= -1 # invert to conform to how aframe does things
         #print("output", min(y))
         integrated = buffer.update(
             input_update=X,
@@ -210,34 +208,29 @@ def main(
             input_time_offset=0,
             output_time_offset=time_offset + integration_window_length,
         )
-        print(234, integrated)
         event = None
         # Only search if we had sufficient data to whiten with
         # and if frames were analysis ready
-        print('full_psd_present',full_psd_present)
-        print('ready',ready)
-        if full_psd_present: # and ready:
-            event = searcher.search(integrated, t0 + time_offset)
-            print("EVENTEVENTEVENTEVNET", event)
+        if full_psd_present and ready:
+            event, idx = searcher.search(integrated, t0 + time_offset)
 
         if event is not None:
+            print("EVENT EVENT!!", event)
             trigger = get_trigger(event)
             response = trigger.submit(event, ifos, datadir, ifo_suffix)
             last_event_written = False
             last_event_trigger = trigger
             last_event_time = event.gpstime
-            # bilby_res, mollview_plot = run_amplfi(
-            #     last_event_time,
-            #     buffer.input_buffer,
-            #     fduration,
-            #     spectral_density,
-            #     pe_whitener,
-            #     amplfi,
-            #     std_scaler,
-            #     outdir / "whitened_data_plots",
-            # )
-            # graceid = response.json()["graceid"]
-            # trigger.submit_pe(bilby_res, mollview_plot, graceid)
+
+            graceid = response.json()["graceid"]
+            print(f'GraceID is {graceid}')
+
+            plt.plot(batch[idx,0,:].cpu().flatten(), label='H')
+            plt.plot(batch[idx,1,:].cpu().flatten(), label='L')
+            plt.legend()
+            plt.savefig(f'{graceid}.pdf')
+            plt.clf()
+
 
         if (
             not last_event_written
@@ -246,7 +239,7 @@ def main(
             write_path = last_event_trigger.write_dir
             buffer.write(write_path, last_event_time)
             last_event_written = True
-
+            break
 
 if __name__=='__main__':
     main()
