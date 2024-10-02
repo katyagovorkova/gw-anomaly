@@ -54,8 +54,8 @@ def main(args):
     generated_snr = np.load(args.generated_data_path[:-4] + "_SNR.npz.npy")  
     data_eval = np.load(args.eval_data_path)
 
-    fm_model_path = f"{MODELS_LOCATION}/fm_model.pt"
-    norm_factors_path = f"{MODELS_LOCATION}/norm_factor_params.npy"
+    fm_model_path = f"{FM_LOCATION}/fm_model.pt"
+    norm_factors_path = f"{FM_LOCATION}/norm_factor_params.npy"
 
     scaled_evals, unscaled_evals, fm_vals, (weight, bias) = process_linear_fm(data_eval, fm_model_path, norm_factors_path, DEVICE)
     

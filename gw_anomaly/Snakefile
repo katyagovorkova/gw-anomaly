@@ -307,7 +307,7 @@ rule plot_results:
             expand(rules.evaluate_signals.output.save_file,
                 signal_dataclass=dataclasses,
                 version=VERSION)],
-        fm_model_path = f'{MODELS_LOCATION}/fm_model.pt'
+        fm_model_path = f'{FM_LOCATION}/fm_model.pt'
     params:
         evaluation_dir = '/home/katya.govorkova/gwak-paper-final-models/',
         save_path = directory(f'output/{VERSION}/paper/')

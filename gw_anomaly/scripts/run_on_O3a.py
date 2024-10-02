@@ -276,9 +276,9 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, neworder
         kernel = kernel[None, :, :]
         heuristics_tests = True
 
-        norm_factors = np.load(f"{MODELS_LOCATION}/norm_factor_params.npy")
+        norm_factors = np.load(f"{FM_LOCATION}/norm_factor_params.npy")
 
-        fm_model_path = (f"{MODELS_LOCATION}/fm_model.pt")
+        fm_model_path = (f"{FM_LOCATION}/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
