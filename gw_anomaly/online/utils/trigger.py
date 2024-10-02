@@ -33,7 +33,7 @@ def get_frame_write_time(
         ifo_dir = "_".join([ifos[0], ifo_suffix])
     else:
         ifo_dir = ifos[0]
-    prefix, length, _ = get_prefix(datadir / ifo_dir)
+    prefix, length, _ = get_prefix(datadir / Path(ifo_dir))
     middle = "_".join(prefix.split("_")[1:])
     for ifo in ifos:
         if ifo_suffix is not None:
@@ -41,7 +41,7 @@ def get_frame_write_time(
         else:
             ifo_dir = ifo
         prefix = f"{ifo[0]}-{ifo}_{middle}"
-        fname = datadir / ifo_dir / f"{prefix}-{int(gpstime)}-{length}.gwf"
+        fname = datadir / Path(ifo_dir) / Path(f"{prefix}-{int(gpstime)}-{length}.gwf")
         t_write = max(t_write, os.path.getmtime(fname))
 
     return gps_from_timestamp(t_write)
@@ -94,10 +94,11 @@ class Searcher:
         #     logging.info(
         #         "FAR {}/day threshold is {:0.3f}".format(far, threshold)
         #     )
+        self.thresholds = [-25]
 
-        # self.inference_sampling_rate = inference_sampling_rate
-        # self.refractory_period = refractory_period
-        # self.last_detection_time = time.time() - self.refractory_period
+        self.inference_sampling_rate = inference_sampling_rate
+        self.refractory_period = refractory_period
+        self.last_detection_time = time.time() - self.refractory_period
         self.detecting = False
 
     def check_refractory(self, value):
@@ -141,34 +142,34 @@ class Searcher:
 
         # if we're already mid-detection, take as
         # the event the max in the current window
-        max_val = y.max()
+        min_val = y.min()
         if self.detecting:
-            idx = np.argmax(y)
+            idx = np.argmin(y)
             self.detecting = False
-            return self.build_event(max_val, t0, idx)
+            return self.build_event(min_val, t0, idx), idx
 
         # otherwise check all of our thresholds to
         # see if we have an event relative to any of them
-        if not (max_val >= self.thresholds).any():
+        if not (min_val <= self.thresholds).any():
             # if not, nothing to do here
-            return None
+            return None, None
 
         logging.info(
-            f"Detected event with detection statistic>={max_val:0.3f}"
+            f"Detected event with detection statistic<={min_val:0.3f}"
         )
 
         # check if the integrated output is still
         # ramping as we get to the end of the frame
-        idx = np.argmax(y)
+        idx = np.argmin(y)
         if idx < (len(y) - 1):
             # if not, assume the event is in this
             # frame and build an event around it
-            return self.build_event(max_val, t0, idx)
+            return self.build_event(min_val, t0, idx), idx
         else:
             # otherwise, note that we're mid-event but
             # wait until the next frame to mark it
             self.detecting = True
-            return None
+            return None, None
 
 
 @dataclass
@@ -206,7 +207,7 @@ class Trigger:
         ifo_suffix: str = None,
     ):
         gpstime = event.gpstime
-        event_dir = self.write_dir / f"event_{int(gpstime)}"
+        event_dir = Path(self.write_dir +'/'+ f"event_{int(gpstime)}")
         event_dir.mkdir(exist_ok=True, parents=True)
         filename = event_dir / f"event-{int(gpstime)}.json"
 
@@ -219,23 +220,23 @@ class Trigger:
 
         logging.info(f"Submitting trigger to file {filename}")
         response = self.gdb.createEvent(
-            group="CBC",
-            pipeline="aframe",
+            group="Burst",
+            pipeline="GWAK",
             filename=str(filename),
             search="AllSky",
         )
-        submission_time = float(tconvert(datetime.now(tz=timezone.utc)))
-        t_write = get_frame_write_time(gpstime, datadir, ifos, ifo_suffix)
-        # Time to submit since event occured and since the file was written
-        total_latency = submission_time - gpstime
-        write_latency = t_write - gpstime
-        aframe_latency = submission_time - t_write
+        # submission_time = float(tconvert(datetime.now(tz=timezone.utc)))
+        # t_write = get_frame_write_time(gpstime, datadir, ifos, ifo_suffix)
+        # # Time to submit since event occured and since the file was written
+        # total_latency = submission_time - gpstime
+        # write_latency = t_write - gpstime
+        # aframe_latency = submission_time - t_write
 
-        latency_fname = event_dir / "latency.log"
-        latency = "Total Latency (s),Write Latency (s),Aframe Latency (s)\n"
-        latency += f"{total_latency},{write_latency},{aframe_latency}"
-        with open(latency_fname, "w") as f:
-            f.write(latency)
+        # latency_fname = event_dir / "latency.log"
+        # latency = "Total Latency (s),Write Latency (s),Aframe Latency (s)\n"
+        # latency += f"{total_latency},{write_latency},{aframe_latency}"
+        # with open(latency_fname, "w") as f:
+        #     f.write(latency)
 
         return response
 

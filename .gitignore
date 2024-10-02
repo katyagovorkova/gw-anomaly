@@ -8,3 +8,5 @@ tmp/*
 *._*.py
 *._*.pdf
 *.pt
+gw_anomaly/online/test*
+gw_anomaly/online/*.pdf
