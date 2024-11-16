@@ -150,6 +150,7 @@ def extract_chunks(strain_data, timeslide_num, important_points, device,
     edge_check_passed = []
     fill_strains = np.zeros((len(important_points), 2, window_size*2))
     for idx, point in enumerate(important_points):
+        print('Point', point)
         # check that the point is not on the edge
         edge_check_passed.append(not(point < window_size * 2 or timeslide_len - point < window_size*2))
         if not(point < window_size * 2 or timeslide_len - point < window_size*2):
@@ -183,10 +184,10 @@ def resample_bandpass_whiten(
     strainL1_0 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
     strainH1_0 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
 
-    strainL1 = strainL1_0.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
-    strainL1 = strainL1.whiten()
-    strainH1 = strainH1_0.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.whiten()
+    strainL1 = strainL1_0.resample(sample_rate).whiten().bandpass(bandpass_low, bandpass_high)
+    # strainL1 = strainL1.whiten()
+    strainH1 = strainH1_0.resample(sample_rate).whiten().bandpass(bandpass_low, bandpass_high)
+    # strainH1 = strainH1.whiten()
 
     return strainH1, strainL1, strainH1_0, strainL1_0
 
@@ -280,11 +281,13 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, detectio
         # extract important "events" with indices
         timeslide_chunks, edge_check_filter = extract_chunks(data, 0, # 0 - timeslide number 0 (no shifting happening)
                                             midpoints[indices],
-                                            DEVICE, window_size=1024) # 0.25 seconds on either side
+                                            DEVICE, window_size=2048) # 0.25 seconds on either side
                                                                     # so it should come out to desired 0.5
 
         filtered_final_scaled_evals = filtered_final_scaled_evals.detach().cpu().numpy()
         filtered_final_score = filtered_final_score.detach().cpu().numpy()
+
+        print('edge_check_filter', edge_check_filter)
 
         filtered_final_scaled_evals = filtered_final_scaled_evals[edge_check_filter]
         filtered_final_score = filtered_final_score[edge_check_filter]
@@ -293,9 +296,11 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, detectio
 
         filtered_timeslide_chunks = timeslide_chunks
 
+
         heuristics_tests = True
         if heuristics_tests:
-            model_path = f"{FM_LOCATION}/model_heuristic.h5"
+            # model_path = f"{FM_LOCATION}/model_heuristic.h5"
+            model_path = f'/home/eric.moreno/QUAK/ryan_checks/ryan/model.h5'
             model_heuristic = BasedModel().to(DEVICE)
             model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
@@ -310,6 +315,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, detectio
                 res_sigmoid = sig_prob_function(res)
                 final_final = res_sigmoid * filtered_final_score[i]
                 filtered_final_score[i] *= res_sigmoid
+                print('final_final[0]',final_final[0])
                 passed_heuristics.append(final_final[0] < -1) #[0] since it was saving arrays(arrays)
 
 
@@ -334,8 +340,8 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, detectio
         h1_cat2_filename = '/home/eric.moreno/QUAK/katya/gw-anomaly/output/H1_CAT2_ACTIVE_SEGMENTS.txt'
         h1_cat2_segments = read_segments_from_file(h1_cat2_filename)
 
-        if check_segment_overlap(detection_point, l1_cat2_segments) or check_segment_overlap(detection_point, h1_cat2_segments):
-            cat2_name = '_cat2' if cat2 else ''
+
+        cat2_name = '_cat2' if check_segment_overlap(detection_point, l1_cat2_segments) or check_segment_overlap(detection_point, h1_cat2_segments) else ''
 
         scaled_evals = scaled_evals.cpu().numpy()
         scaled_evals = combine_freqcorr(scaled_evals)
@@ -412,6 +418,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries, detectio
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_score:.2f}{cat2_name}.png', bbox_inches="tight")
             pickle.dump(axs, open(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_score:.2f}{cat2_name}.pickle', 'wb'))
+            print(f'Found detection {savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_score:.2f}{cat2_name}')
             plt.close()
 
 
@@ -421,7 +428,7 @@ def main(args):
     except FileExistsError:
         None
 
-    trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
+    trained_path = "/home/katya.govorkova/gw_anomaly/output/O3av2/"
 
     run_short_test = False
     if run_short_test:
@@ -433,15 +440,11 @@ def main(args):
         Hclean, Lclean, Hraw, Lraw = resample_bandpass_whiten(A, B)
         data = np.vstack([np.array(Hclean.data), np.array(Lclean.data)])
 
-        get_evals(data, trained_path, args.savedir, int(A), [Hclean, Lclean], end_point=int(B))
+        get_evals(data, trained_path, args.savedir, int(A), [Hclean, Lclean], detection_point=float(A))
         end = time.time()
         print('Time to evaluate one hour of zero lag', end - start, 'sec')
 
         assert 0
-
-    f_segments = 'output/paper/done_O3_segments.npy'
-    if not os.path.exists(f_segments):
-        np.save(f_segments, np.array([0]))
 
     valid_segments = ['1243305662.9310', '1241104246.7490', '1249635282.3590',
         '1242442957.4230', '1241624696.5500', '1251009253.7240', '1240050919.5040',
@@ -459,11 +462,13 @@ def main(args):
     except FileExistsError:
         None
     for det in valid_segments:
-        done_segments = np.load(f_segments)
-        A, B = float(det)-1800,float(det)+1800
-        if A in done_segments and B in done_segments:
-            print("already finished,", A, B)
-            continue
+
+        det = float(det)
+        if det<1256655618: det+=10
+
+        print(f'Analyzing {det}')
+
+        A, B = float(det)-3600/2,float(det)+3600/2
 
         H, L, _, _ = resample_bandpass_whiten(A, B)
         if H is None and L is None: continue
@@ -471,7 +476,6 @@ def main(args):
 
         if data.shape[-1] < 1e5: return None
         get_evals(data, trained_path, savedir, int(A), [H, L], detection_point=float(det))
-        np.save(f_segments, np.concatenate((done_segments, [A], [B])))
 
 
 if __name__ == '__main__':

@@ -11,11 +11,11 @@ STRAIN_START_STOP = {
 # If you want to use specific version of data or models, specify the path here
 # and in the Snakefile turn on a flag that says use_trained_models
 DATA_LOCATION = f'/home/katya.govorkova/gwak-paper-final-models/data'
-MODELS_LOCATION = f'/home/katya.govorkova/gwak-paper-final-models/models/'
+MODELS_LOCATION = f'/home/katya.govorkova/gwak-paper-final-models/trained/models/'
 FM_LOCATION = f'/home/katya.govorkova/gwak-paper-final-models/trained/'
 
 # GPU
-GPU_NAME = 'cuda:2'
+GPU_NAME = 'cuda:1'
 
 # Data generation
 IFOS = ['H1', 'L1']

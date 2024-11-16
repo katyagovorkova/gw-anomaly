@@ -238,10 +238,10 @@ def resample_bandpass_whiten(
     strainH1_rbw = strainH1_0.resample(sample_rate)
     strainH1_rbw = strainH1_rbw.bandpass(bandpass_low, bandpass_high).whiten()
 
-    strainL1 = strainL1_0.resample(sample_rate)
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1_0.resample(sample_rate)
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1_0.whiten().bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1.resample(sample_rate)
+    strainH1 = strainH1_0.whiten().bandpass(bandpass_low, bandpass_high)
+    strainH1 = strainH1.resample(sample_rate)
 
     return strainH1, strainL1, strainH1_rbw, strainL1_rbw
 
