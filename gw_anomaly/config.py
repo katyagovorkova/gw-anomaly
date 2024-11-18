@@ -1,6 +1,6 @@
 # Version of the code with which the data was generated
 PERIOD = 'O3a' # or O3b
-VERSION = PERIOD + 'v0' # _only_correlation
+VERSION = PERIOD + 'v0_non_linear_bbh_only' # _only_correlation
 # if you use only O3a/O3b, you need to remove the other period below:
 STRAIN_START_STOP = {
     'O3a': [1238166018, 1238170289],
