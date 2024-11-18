@@ -1,4 +1,9 @@
 import os
+os.environ["OPENBLAS_NUM_THREADS"] = "4"
+os.environ["OMP_NUM_THREADS"] = "4"
+os.environ["MKL_NUM_THREADS"] = "4"
+
+import os
 import numpy as np
 import argparse
 import torch
@@ -9,10 +14,8 @@ from models import LinearModel, GwakClassifier
 from evaluate_data import full_evaluation
 import json
 import matplotlib
-import torch.nn as nn
 from torch.nn.functional import conv1d
 from scipy.stats import pearsonr
-from scipy.signal import welch
 import pickle
 from config import (
     CHANNEL,
@@ -26,17 +29,7 @@ from config import (
     SEG_NUM_TIMESTEPS,
     CLASS_ORDER
     )
-
-from helper_functions import (
-    far_to_metric,
-    compute_fars,
-    load_gwak_models,
-    joint_heuristic_test,
-    combine_freqcorr
-    )
-
-DEVICE = torch.device(GPU_NAME)
-
+import torch.nn as nn
 class BasedModel(nn.Module):
     def __init__(self):
         super(BasedModel, self).__init__()
@@ -55,7 +48,6 @@ class BasedModel(nn.Module):
         x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
         return x1 * x2_1 * x2_2 * x2_3
 
-
 def extract(gwak_values):
     result = np.zeros((gwak_values.shape[0], 3))
     for i, pair in enumerate([[3, 4], [9, 10], [12, 13]]):
@@ -67,7 +59,6 @@ def extract(gwak_values):
         result[:, i] = ratio
     return result
 
-
 def compute_signal_strength_chop_sep(x, y):
     psd0 = welch(x)[1]
     psd1 = welch(y)[1]
@@ -75,14 +66,13 @@ def compute_signal_strength_chop_sep(x, y):
     LLS = np.log(np.sum(psd1))
     return HLS, LLS
 
-
 def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
     # works for one window at a time
     Hs = H[H_start:H_end]
     minval = 1
     for shift in range(-maxshift, maxshift):
         Ls = L[H_start+shift:H_end+shift]
-        #minval = min(pearsonr(Hs, Ls)[0], minval)
+
         p = pearsonr(Hs, Ls)[0]
         if p < minval:
             minval = p
@@ -90,15 +80,17 @@ def shifted_pearson(H, L, H_start, H_end, maxshift=int(10*4096/1000)):
 
     return minval, shift_idx
 
-
 def parse_strain(x):
     # take strain, compute the long sig strenght & pearson
     # split it up, do the same thing for short
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
-    #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
     return long_pearson, HSS, LSS
 
+from helper_functions import far_to_metric, compute_fars, load_gwak_models, joint_heuristic_test, combine_freqcorr
+DEVICE = torch.device(GPU_NAME)
+from scipy.signal import welch
+heuristics_tests = True
 
 def parse_gwtc_catalog(path, mingps=None, maxgps=None):
     gwtc = np.loadtxt(path, delimiter=",", dtype="str")
@@ -112,18 +104,15 @@ def parse_gwtc_catalog(path, mingps=None, maxgps=None):
         pulled_data = pulled_data[np.logical_and(pulled_data[:, 0]<maxgps, pulled_data[:, 0]>mingps)]
     return pulled_data
 
-
 def find_segment(gps, segs):
     for seg in segs:
         a, b = seg
         if a < gps and b > gps:
             return seg
 
-
 def sig_prob_function(evals, scale=40):
     sigmoid = lambda x: 1/(1+np.exp(-x))
     return 1-(sigmoid(scale * (evals-0.5)))
-
 
 def get_far(score, sort_eval):
     ind = np.searchsorted(sort_eval, score)
@@ -132,7 +121,6 @@ def get_far(score, sort_eval):
     #N = len(sort_eval)
     units = 10000*3.15e7
     return ind/units
-
 
 def make_eval_chunks(a, b, dur):
     '''
@@ -151,7 +139,6 @@ def make_eval_chunks(a, b, dur):
     #ending chunk, but still make it one hour
     out.append([str(b-dur), str(b)])
     return out
-
 
 def event_clustering(indices, scores, spacing, device):
     '''
@@ -184,7 +171,6 @@ def event_clustering(indices, scores, spacing, device):
         final_points.append(bestval)
     return torch.from_numpy(np.array(final_points)).int().to(device)
 
-
 def extract_chunks(strain_data, timeslide_num, important_points, device,
                     roll_amount = SEG_NUM_TIMESTEPS, window_size=1024):
     '''
@@ -213,7 +199,6 @@ def extract_chunks(strain_data, timeslide_num, important_points, device,
 
     return fill_strains, edge_check_passed
 
-
 def whiten_bandpass_resample(
         start_point,
         end_point,
@@ -224,50 +209,46 @@ def whiten_bandpass_resample(
 
     device = torch.device(GPU_NAME)
 
-    # Load LIGO data
     try:
         start_point, end_point = int(start_point)+10, int(end_point)-10
-        strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-        strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
+        strainL1 = TimeSeries.fetch_open_data(f'L1', start_point, end_point)
+        strainH1 = TimeSeries.fetch_open_data(f'H1', start_point, end_point)
 
         t0 = int(strainL1.t0 / u.s)
 
         # Whiten, bandpass, and resample
-        strainL1 = strainL1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
-        strainL1 = strainL1.whiten()
+        strainL1 = strainL1.resample(sample_rate)
+        strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
 
-        strainH1 = strainH1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
-        strainH1 = strainH1.whiten()
+        strainH1 = strainH1.resample(sample_rate)
+        strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
 
         return [strainH1, strainL1]
     except:
         return None, None
 
-
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
-    heuristic_model_path = f"{MODELS_LOCATION}/model_heuristic.h5"
+    model_path = "/home/katya.govorkova/gwak-paper-final-models/trained/model_heuristic.h5"
     model_heuristic = BasedModel().to(DEVICE)
-    model_heuristic.load_state_dict(torch.load(heuristic_model_path, map_location=DEVICE))
+    model_heuristic.load_state_dict(torch.load(model_path, map_location=DEVICE))
 
-    # split the data into 1-hour chunks to fit in memory best
     eval_at_once_len = int(3600)
     N_one_hour_splits = int(data_.shape[1]//(eval_at_once_len*SAMPLE_RATE) + 1)
-    print("N splits:", N_one_hour_splits)
 
     for hour_split in range(N_one_hour_splits):
         start = int(hour_split*SAMPLE_RATE*eval_at_once_len)
         end = int(min(data_.shape[1], (hour_split+1)*SAMPLE_RATE*eval_at_once_len))
-        print(start, end)
+        # print(start, end)
         if end - 10 < start:
             return None
         data = data_[:, start:end]
 
-        model_path = ["bbh.pt",
-                      "sglf.pt",
-                      "sghf.pt",
-                      "background.pt",
-                      "glitches.pt"]
+        model_path = ["output/O3av2/trained/models/bbh.pt",
+                      "output/O3av2/trained/models/sglf.pt",
+                      "output/O3av2/trained/models/sghf.pt",
+                      "output/O3av2/trained/models/background.pt",
+                      "output/O3av2/trained/models/glitches.pt"]
 
         models_path = [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in model_path]
         gwak_models = load_gwak_models(models_path, DEVICE, GPU_NAME)
@@ -275,9 +256,10 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
         kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
         kernel = kernel[None, :, :]
-        norm_factors = np.load(f"{FM_LOCATION}/norm_factor_params.npy")
+        heuristics_tests = True
+        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = (f"{FM_LOCATION}/fm_model.pt")
+        fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
@@ -304,7 +286,6 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
         scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
-
         scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
         scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
             kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
@@ -344,16 +325,12 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 strain_feats = parse_strain(strain_segment)
                 together = np.concatenate([strain_feats, gwak_filtered[i]])
                 res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
-                #passed_heuristics.append(res<0.46)
 
                 res_sigmoid = sig_prob_function(res)
-                print(res, res_sigmoid, filtered_final_score[i])
                 final_final = res_sigmoid * filtered_final_score[i]
-                print(res, res_sigmoid, filtered_final_score[i])
                 filtered_final_score[i] *= res_sigmoid
-                print(res, res_sigmoid, filtered_final_score[i])
                 passed_heuristics.append(final_final[0] < -1) #[0] since it was saving arrays(arrays)
-                
+
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
             filtered_final_score = filtered_final_score[passed_heuristics]
@@ -361,7 +338,6 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             indices = indices[passed_heuristics]
 
             print(f"Fraction removed by heuristics test {N_initial -len(filtered_final_score)}/{N_initial}")
-
         # rename them for less confusion, easier typing
         gwak_values = filtered_final_scaled_evals
         fm_scores = filtered_final_score
@@ -375,8 +351,21 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         scaled_evals = combine_freqcorr(scaled_evals)
         bias_value = bias_value.cpu().numpy()
         smoothed_scores = smoothed_scores.cpu().numpy()
+
         for j in range(len(gwak_values)):
-            fig, axs = plt.subplots(2, 2, figsize=(28, 17))
+            indiv_fig = np.empty((2, 2), dtype=object)
+            indiv_axs = np.empty((2, 2), dtype=object)
+            for a in range(2):
+                #indiv_fig[a] = dict()
+                for b in range(2):
+                    temp_fig, temp_axs = plt.subplots(1, 1, figsize=(8, 5))
+                    #print(a, b, temp_fig)
+                    indiv_fig[a, b] = temp_fig
+                    indiv_axs[a, b] = temp_axs
+
+            #assert 0
+
+            #fig, axs = plt.subplots(2, 2, figsize=(28, 17))
             loudest = indices[j]
             left_edge = 1024 //SEGMENT_OVERLAP
             right_edge = 1024 // SEGMENT_OVERLAP
@@ -389,27 +378,28 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                     line_type = "--"
                 if i % 2 == 0 or labels[i] in ["freq corr"]:
 
-                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
+                    indiv_axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
                                 label = labels[i], c=cols[i//2], linestyle=line_type)
+
                 else:
-                    axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
+                    indiv_axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
                                     c=cols[i//2], linestyle=line_type)
 
 
-            axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
-            axs[1, 0].plot([], [], '-', label="Hanford", c="black")
-            axs[1, 0].plot([], [], '--', label="Livingston", c="black")
-            axs[1, 0].legend(handlelength=3, fontsize=17)
-            axs[1, 0].set_xlabel("Time, (ms)")
-            axs[1, 0].set_ylabel("Final Metric Contribution")
+            indiv_axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
+            indiv_axs[1, 0].plot([], [], '-', label="Hanford", c="black")
+            indiv_axs[1, 0].plot([], [], '--', label="Livingston", c="black")
+            indiv_axs[1, 0].legend(handlelength=3, fontsize=17)
+            indiv_axs[1, 0].set_xlabel("Time, (ms)")
+            indiv_axs[1, 0].set_ylabel("Final Metric Contribution")
 
             strain_ts = np.linspace(0, len(strain_chunks[j, 0, :])/SAMPLE_RATE, len(strain_chunks[j, 0, :]))
-            axs[0, 0].plot(strain_ts, strain_chunks[j, 0, :], label = 'Hanford', alpha=0.8)
-            axs[0, 0].plot(strain_ts, strain_chunks[j, 1, :], label = 'Livingston', alpha=0.8)
-            axs[0, 0].set_xlabel('Time, (ms)')
-            axs[0, 0].set_ylabel('strain')
-            axs[0, 0].legend()
-            axs[0, 0].set_title(f'gps time: {start_point} + {midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len:.3f}')
+            indiv_axs[0, 0].plot(strain_ts, strain_chunks[j, 0, :], label = 'Hanford', alpha=0.8)
+            indiv_axs[0, 0].plot(strain_ts, strain_chunks[j, 1, :], label = 'Livingston', alpha=0.8)
+            indiv_axs[0, 0].set_xlabel('Time, (ms)')
+            indiv_axs[0, 0].set_ylabel('strain')
+            indiv_axs[0, 0].legend()
+            indiv_axs[0, 0].set_title(f'gps time: {start_point + midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len:.2f}')
             p = midpoints[loudest]
 
             do_q_scan = True
@@ -423,95 +413,56 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 t0 = H_strain.t0.value
                 dt = H_strain.dt.value
 
-                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
-                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt))
+                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
+                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
                 f = np.array(H_hq.yindex)
                 t = np.array(H_hq.xindex)
                 #t=strain_ts *1000
                 t -= t[0]
 
-                im_H = axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T)
-                fig.colorbar(im_H, ax=axs[0, 1], label = "spectral power")
-                axs[0, 1].set_yscale("log")
-                axs[0, 1].set_xlabel("Time (ms)")
-                axs[0, 1].set_ylabel("Freq (Hz)")
-                axs[0, 1].set_title("Hanford Q-Transform")
+                im_H = indiv_axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T, vmax = 25, vmin = 0)
+                indiv_fig[0, 1].colorbar(im_H, ax=indiv_axs[0, 1], label = "spectral power")
+                indiv_axs[0, 1].set_yscale("log")
+                indiv_axs[0, 1].set_xlabel("Time (ms)")
+                indiv_axs[0, 1].set_ylabel("Freq (Hz)")
+                indiv_axs[0, 1].set_title("Hanford Q-Transform")
 
-                im_L  = axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T)
-                fig.colorbar(im_L, ax=axs[1, 1], label = "spectral power")
-                axs[1, 1].set_yscale("log")
-                axs[1, 1].set_xlabel("Time (ms)")
-                axs[1, 1].set_ylabel("Freq (Hz)")
-                axs[1, 1].set_title("Livingston Q-Transform")
+                im_L  = indiv_axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T, vmax = 25, vmin = 0)
+                indiv_fig[1, 1].colorbar(im_L, ax=indiv_axs[1, 1], label = "spectral power")
+                indiv_axs[1, 1].set_yscale("log")
+                indiv_axs[1, 1].set_xlabel("Time (ms)")
+                indiv_axs[1, 1].set_ylabel("Freq (Hz)")
+                indiv_axs[1, 1].set_title("Livingston Q-Transform")
 
             #FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
             #best_far = get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
             best_far = 0
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             print("best_score", best_score)
-            plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.png', dpi=300, bbox_inches="tight")
-            plt.close()
-
-            # indexing into midpoints with loudest should carry over to original and recreated - if just taking the strongst point to recreate
-            #p = midpoints[loudest]
-            if 0:
-                fig, axs = plt.subplots(5, 2, figsize=(10, 13))
-
-                print(494, original['bbh'].shape)
-                for n, class_name in enumerate(CLASS_ORDER):
-
-                    #i, j = n // 2, n % 2
-                    i=n
-                    detecs = {0:"_hanford", 1:"_livingston"}
-                    for j in range(2):
-                        axs[i, j].plot(original[class_name][loudest][j], label = f'input_{class_name}')
-                        axs[i, j].plot(recreated[class_name][loudest][j], label = f'recreated_{class_name}')
-                        #axs[i, j].set_title(class_name + detecs[j])
-                        axs[i, j].legend()
-
-                axs[0, 0].set_title("hanford")
-                axs[0, 1].set_title("livingston")
-                #print("best_score", best_score)
-                plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_RECREATIONS.png', dpi=300, bbox_inches='tight')
-                plt.close()
-
-                print(514, scaled_evals[loudest])
-                fig, axs = plt.subplots(10, 2, figsize=(10, 26))
-                for w in range(-5, 5):
-                    best_channel = "bbh"
-                    offset = 5
-                    axs[w+offset, 0].plot(original[best_channel][loudest+w][0], label = "original")
-                    axs[w+offset, 0].plot(recreated[best_channel][loudest+w][0], label = "recreated")
-                    axs[w+offset, 0].legend()
-
-                    axs[w+offset, 1].plot(original[best_channel][loudest+w][1], label = "original")
-                    axs[w+offset, 1].plot(recreated[best_channel][loudest+w][1], label = "recreated")
-                    axs[w+offset, 1].legend()
-
-                    axs[0, 0].set_title("Hanford")
-                    axs[0, 1].set_title("Livingston")
-
-                plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}_PRODECURAL_RECREATIONS.png', dpi=300, bbox_inches='tight')
-                plt.close()
+            base = f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}'
+            plt.savefig(base+'.png', dpi=300, bbox_inches="tight")
+            pickle.dump(indiv_axs, open(f'{base}.pickle', 'wb'))
+            print('Saved the plot in', base)
+            rename_map = np.array([["strain", "H_qtransform"],["gwak_values", "L_qtransform"]])
+            for a in range(2):
+                for b in range(2):
+                    indiv_fig[a, b].savefig(f"{base}_{rename_map[a, b]}.png", dpi=200)
+                    pickle.dump(indiv_fig, open(f'{base}_{rename_map[a, b]}.pickle', 'wb'))
+                    plt.close(indiv_fig[a, b])
 
 
 def main(args):
-
     try:
         os.makedirs(args.savedir)
     except FileExistsError:
         None
 
-    #valid_segments = np.load('/home/katya.govorkova/gw-anomaly/output/O3b_intersections.npy')
     valid_segments = np.load("/home/katya.govorkova/gw_anomaly/output/O3b_intersections.npy")
-    trained_path = '/home/katya.govorkova/gwak-paper-final-models/'
-
+    trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
     run_short_test = False
-
     if run_short_test:
-        # testing code
-        B = 1240735662.0
-        A = B-3600
+        A = 1241104246.7490
+        B = A + 3600
 
         H, L = whiten_bandpass_resample(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
@@ -523,12 +474,9 @@ def main(args):
     if not os.path.exists(f_segments):
         np.save(f_segments, np.array([0]))
 
-    print(valid_segments)
-
     for a, b in valid_segments:
         done_segments = np.load(f_segments)
         As = np.arange(a, b, 3600)
-
         for A in As:
             B = A + 3600
             if B > b: continue
@@ -537,11 +485,9 @@ def main(args):
                 continue
 
             print("Working on", A, B)
-
             H, L = whiten_bandpass_resample(A, B)
             if H is None and L is None: continue
             data = np.vstack([np.array(H.data), np.array(L.data)])
-
             if data.shape[-1] < 1e5: return None
             get_evals(data, trained_path, args.savedir, int(A), [H, L])
             np.save(f_segments, np.concatenate((done_segments, [A], [B])))
@@ -549,9 +495,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    
+
     # Required arguments
-    parser.add_argument('savedir', type=str, default=None,
+    parser.add_argument('--savedir', type=str, default='output/paperO3b',
                         help='File with valid segments')
 
     args = parser.parse_args()
