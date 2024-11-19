@@ -183,13 +183,14 @@ def event_clustering(indices, scores, spacing, device):
     final_points = []
     for cluster in clustered:
         # take the one with the lowest score (most significant)
-        bestscore = 10
+        bestscore = 30000
         bestval = None
         for elem in cluster:
             if scores[elem] < bestscore:
                 bestscore = scores[elem]
                 bestval = elem
         final_points.append(bestval)
+        print('final_points',final_points)
     return torch.from_numpy(np.array(final_points)).int().to(device)
 
 def extract_chunks(strain_data, timeslide_num, important_points, device,
@@ -270,7 +271,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         final_values = final_values[0]
 
         # Set the threshold here
-        FAR_2days = -1 # lowest FAR bin we want to worry about
+        FAR_2days = 30000 #-1 # lowest FAR bin we want to worry about
 
 
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
@@ -278,7 +279,6 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         #scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
         #print("scaled_evals", scaled_evals.shape)
 
-        final_values_slx = (final_values - mean_norm)/std_norm
         final_values_slx = (final_values - mean_norm)/std_norm
 
         hi = torch.zeros( (final_values_slx.shape[0], final_values_slx.shape[1]+1)).to(final_values_slx.device)
@@ -288,12 +288,11 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         final_values_slx = hi
         #scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
         scaled_evals = fm_model(final_values_slx)
-
         scores = scaled_evals
         #scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
         #    kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
         smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
-            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1).flatten()
         indices = torch.where(smoothed_scores < FAR_2days)[0]
 
         if len(indices) == 0: continue # Didn't find anything
@@ -351,10 +350,10 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         # plotting all these significant events
         n_points = strain_chunks.shape[2]
 
-        scaled_evals = scaled_evals.cpu().numpy()
-        scaled_evals = combine_freqcorr(scaled_evals)
-        bias_value = bias_value.cpu().numpy()
-        smoothed_scores = smoothed_scores.cpu().numpy()
+        scaled_evals = scaled_evals.cpu().detach().numpy()
+        # scaled_evals = combine_freqcorr(scaled_evals)
+        # bias_value = bias_value.cpu().numpy()
+        smoothed_scores = smoothed_scores.cpu().detach().numpy()
         for j in range(len(gwak_values)):
             fig, axs = plt.subplots(2, 2, figsize=(28, 17))
             loudest = indices[j]
@@ -376,7 +375,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                                     c=cols[i//2], linestyle=line_type)
 
 
-            axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
+            axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge], label = 'final metric', c='black')
             axs[1, 0].plot([], [], '-', label="Hanford", c="black")
             axs[1, 0].plot([], [], '--', label="Livingston", c="black")
             axs[1, 0].legend(handlelength=3, fontsize=17)
@@ -425,10 +424,10 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
             # FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
             best_far = 0 #get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
-            best_score = fm_scores[j][0] # [ [one element], [one element]] structure
+            best_score = fm_scores[j] # [ [one element], [one element]] structure
             print("best_score", best_score)
             plt.savefig(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.png', dpi=300, bbox_inches="tight")
-            pickle.dump(indiv_axs, open(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.pickle', 'wb'))
+            pickle.dump(axs, open(f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}.pickle', 'wb'))
             plt.close()
 
 def whiten_bandpass_resample(
@@ -478,10 +477,10 @@ def main(args):
         get_evals(data, trained_path, args.savedir, int(A), [H, L])
         assert 0
 
-    valid_segments = np.load("/home/katya.govorkova/gw_anomaly/output/O3b_intersections.npy")
-    trained_path = "/home/katya.govorkova/gw_anomaly/output/O3bv2_non_linear_bbh_only/" # fix hardcoding later
+    valid_segments = np.load("/home/katya.govorkova/gw_anomaly/output/O3a_intersections.npy")
+    trained_path = "/home/katya.govorkova/gw_anomaly/output/O3av2_non_linear_bbh_only/" # fix hardcoding later
 
-    f_segments = 'output/done_O3b_segments_non_linear_bbh_only.npy'
+    f_segments = 'output/done_O3a_segments_non_linear_bbh_only.npy'
     if not os.path.exists(f_segments):
         np.save(f_segments, np.array([0]))
 
@@ -503,9 +502,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    
+
     # Required arguments
-    parser.add_argument('--savedir', type=str, default='output/O3b_non_linear_bbh_only',
+    parser.add_argument('--savedir', type=str, default='output/O3a_non_linear_bbh_only',
                         help='File with valid segments')
 
     args = parser.parse_args()
