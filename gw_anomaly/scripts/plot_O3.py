@@ -1,11 +1,8 @@
-import pickle
-import time
 import os
 import numpy as np
 import argparse
 import torch
 from gwpy.timeseries import TimeSeries
-from gwpy.segments import DataQualityDict
 from astropy import units as u
 import matplotlib.pyplot as plt
 from models import LinearModel, GwakClassifier
@@ -14,8 +11,7 @@ import json
 import matplotlib
 from torch.nn.functional import conv1d
 from scipy.stats import pearsonr
-import torch.nn as nn
-from scipy.signal import welch
+import pickle
 from config import (
     CHANNEL,
     GPU_NAME,
@@ -26,25 +22,9 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
     MODELS_LOCATION,
     SEG_NUM_TIMESTEPS,
-    CLASS_ORDER,
-    FM_LOCATION
+    CLASS_ORDER
     )
-from helper_functions import (
-    far_to_metric,
-    compute_fars,
-    load_gwak_models,
-    joint_heuristic_test,
-    combine_freqcorr
-    )
-
-CHANNEL = 'DCS-CALIB_STRAIN_CLEAN_C01'
-FRAME_TYPE = 'HOFT_C01'
-STATE_FLAG = 'DCS-ANALYSIS_READY_C01:1'
-CUDA_LAUNCH_BLOCKING = 1
-DEVICE = torch.device(GPU_NAME)
-heuristics_tests = True
-
-
+import torch.nn as nn
 class BasedModel(nn.Module):
     def __init__(self):
         super(BasedModel, self).__init__()
@@ -53,14 +33,11 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-
+        
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
         x1 = self.activation(self.layer1(x[:, :3]))
-        # x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
-        # x2_2 = self.activation(self.layer2_2(x[:, 4:5]))
-        # x2_3 = self.activation(self.layer2_3(x[:, 5:6]))
         x2_1 = self.activation(self.layer2_1(x[:, 3:4]))
         x2_2 = self.activation(self.layer2_1(x[:, 4:5]))
         x2_3 = self.activation(self.layer2_1(x[:, 5:6]))
@@ -218,8 +195,7 @@ def extract_chunks(strain_data, timeslide_num, important_points, device,
 
     return fill_strains, edge_check_passed
 
-
-def resample_bandpass_whiten(
+def whiten_bandpass_resample(
         start_point,
         end_point,
         sample_rate=SAMPLE_RATE,
@@ -229,53 +205,57 @@ def resample_bandpass_whiten(
 
     device = torch.device(GPU_NAME)
 
-    start_point, end_point = int(start_point)+10, int(end_point)-10
-    strainL1_0 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-    strainH1_0 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
-
-    strainL1_rbw = strainL1_0.resample(sample_rate)
-    strainL1_rbw = strainL1_rbw.bandpass(bandpass_low, bandpass_high).whiten()
-    strainH1_rbw = strainH1_0.resample(sample_rate)
-    strainH1_rbw = strainH1_rbw.bandpass(bandpass_low, bandpass_high).whiten()
-
-    strainL1 = strainL1_0.whiten().bandpass(bandpass_low, bandpass_high)
-    strainL1 = strainL1.resample(sample_rate)
-    strainH1 = strainH1_0.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.resample(sample_rate)
-
-    return strainH1, strainL1, strainH1_rbw, strainL1_rbw
+    # Load LIGO data
+    #try:
+    # Load LIGO data
+    #try:
+    start_point, end_point = int(start_point)-10, int(end_point)-10
+    strainL1 = TimeSeries.fetch_open_data("L1", start_point, end_point)
+    strainH1 = TimeSeries.fetch_open_data("H1", start_point, end_point) #f'H1:{CHANNEL}',
 
 
-def read_segments_from_file(filename):
-    segments = []
-    with open(filename, 'r') as file:
-        for line in file:
-            start, end = map(float, line.split())
-            segments.append((start, end))
-    return segments
+    t0 = int(strainL1.t0 / u.s)
+
+    strainL1 = strainL1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainL1 = strainL1.whiten()
+
+    strainH1 = strainH1.resample(sample_rate).bandpass(bandpass_low, bandpass_high)
+    strainH1 = strainH1.whiten()
+
+    return [strainH1, strainL1]
+    #except:
+    #    return None, None
+
+def whiten_bandpass_resample_new_order(
+        start_point,
+        end_point,
+        sample_rate=SAMPLE_RATE,
+        bandpass_low=BANDPASS_LOW,
+        bandpass_high=BANDPASS_HIGH,
+        shift=None):
+
+    device = torch.device(GPU_NAME)
+
+    start_point, end_point = int(start_point)-10, int(end_point)-10
+    strainL1_0 = TimeSeries.fetch_open_data("L1", start_point, end_point)#f'L1:{CHANNEL}',
+    strainH1_0 = TimeSeries.fetch_open_data("H1", start_point, end_point)#f'H1:{CHANNEL}',
 
 
-def check_segment_overlap(detection_point, segments):
-    for (start, end) in segments:
-        if not (detection_point < start or detection_point > end):
-            return True  # Overlap found
-    return False  # No overlap found
+    t0 = int(strainL1_0.t0 / u.s)
+
+    strainL1 = strainL1_0.bandpass(bandpass_low, bandpass_high).whiten()#.resample(sample_rate).whiten()
+    strainH1 = strainH1_0.bandpass(bandpass_low, bandpass_high).whiten()#.resample(sample_rate).whiten()
+
+    #return strainH1, strainL1#, strainH1_0, strainL1_0
+    return [strainH1, strainL1]
 
 
 def get_evals(data_, model_path, savedir, start_point,
-              gwpy_timeseries,  data_rbw=None, detection_point=None, manual_eval_times=None):
-
-    heur_model_path = f"{FM_LOCATION}/model_heuristic.h5"
+              gwpy_timeseries, neworder_clean=None, neworder_raw=None,
+              manual_eval_times=None, metric=None):
+    heur_model_path = "/home/katya.govorkova/gwak-paper-final-models/trained/model_heuristic.h5"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(heur_model_path, map_location=DEVICE))
-
-
-    #model_path = '/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/model.h5'
-    #model_path = "/home/ryan.raikman/s22/forks/katya/gw-anomaly/output/plots/model.h5"
-    # heur_model_path = "/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/plots/model.h5"
-    # model_heuristic = BasedModel().to(DEVICE)
-    # model_heuristic.load_state_dict(torch.load(heur_model_path, map_location=DEVICE))
-
 
     # split the data into 1-hour chunks to fit in memory best
     eval_at_once_len = int(3600)
@@ -290,16 +270,18 @@ def get_evals(data_, model_path, savedir, start_point,
             return None
         data = data_[:, start:end]
 
-        model_paths = [f"{MODELS_LOCATION}/bbh.pt",
-                       f"{MODELS_LOCATION}/sglf.pt",
-                       f"{MODELS_LOCATION}/sghf.pt",
-                       f"{MODELS_LOCATION}/background.pt",
-                       f"{MODELS_LOCATION}/glitches.pt"]
+        model_types = ["bbh.pt",
+                       "sglf.pt",
+                       "sghf.pt",
+                       "background.pt",
+                       "glitches.pt"]
+
+        model_paths = []
+        for elem in model_types:
+            model_paths.append(model_path + elem)
 
         gwak_models = load_gwak_models(model_paths, DEVICE, GPU_NAME)
 
-        # norm_factors = np.load(f"/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/O3av0/trained/norm_factor_params.npy")
-        # fm_model_path = ("/home/ryan.raikman/ss24/gw-anomaly/gw_anomaly/output/O3av0/trained/fm_model.pt")
         norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
         fm_model_path = ("/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
 
@@ -309,26 +291,15 @@ def get_evals(data_, model_path, savedir, start_point,
         kernel = kernel[None, :, :]
         heuristics_tests = True
 
-        if 0:
-            fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
-            fm_model.load_state_dict(torch.load(
-                fm_model_path, map_location=GPU_NAME))
+        fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
+        fm_model.load_state_dict(torch.load(
+            fm_model_path, map_location=GPU_NAME))
 
-            linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-            bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-            # linear_weights[:, -2] += linear_weights[:, -1]
-            # linear_weights = linear_weights[:, :-1]
-            # norm_factors = norm_factors[:, :-1]
-        else:
-            fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
-            fm_model.load_state_dict(torch.load(
-                fm_model_path, map_location=GPU_NAME))
-
-            linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-            bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
-            linear_weights[:, -2] += linear_weights[:, -1]
-            linear_weights = linear_weights[:, :-1]
-            norm_factors = norm_factors[:, :-1]
+        linear_weights = fm_model.layer.weight.detach()
+        bias_value = fm_model.layer.bias.detach()
+        linear_weights[:, -2] += linear_weights[:, -1]
+        linear_weights = linear_weights[:, :-1]
+        norm_factors = norm_factors[:, :-1]
 
         orig_kernel = 50
         kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
@@ -336,21 +307,13 @@ def get_evals(data_, model_path, savedir, start_point,
         kernel = kernel[None, :, :]
         heuristics_tests = True
 
+        mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)
+        std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)
 
-
-        mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
-        std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
-
-        #final_values, midpoints = full_evaluation(
-        #                data[None, :, :], models_path, DEVICE,
-        #                return_midpoints=True, loaded_models=gwak_models, grad_flag=False)
         final_values, midpoints, original, recreated = full_evaluation(
                         data[None, :, :], model_paths, DEVICE,
                         return_midpoints=True, return_recreations=True,
                         loaded_models=gwak_models, grad_flag=False)
-
-        print(335, final_values.shape)
-        print(336, midpoints.shape)
 
         final_values = final_values[0]
 
@@ -360,7 +323,7 @@ def get_evals(data_, model_path, savedir, start_point,
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
         scaled_evals = torch.multiply(final_values_slx, linear_weights[None, :])[0, :]
-        #print("scaled_evals", scaled_evals.shape)
+
         scores = (scaled_evals.sum(axis=1) + bias_value)[:, None]
         scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
             kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
@@ -368,12 +331,6 @@ def get_evals(data_, model_path, savedir, start_point,
             kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
         indices = torch.where(smoothed_scores < FAR_2days)[0]
 
-
-        #here, add manual ones
-        # bit of code from below that gives the gps time of the event
-        #loudest = indices[j]
-        #midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len
-        #second half isn't important
         manual_eval_times = torch.tensor(manual_eval_times).to(indices.device)
         if manual_eval_times[0] > start_point:
             manual_eval_times -= start_point
@@ -383,6 +340,7 @@ def get_evals(data_, model_path, savedir, start_point,
         for i, eval_time in enumerate(manual_eval_times):
             eval_time = eval_time * SAMPLE_RATE
             insert_location = torch.searchsorted(torch.from_numpy(midpoints).to(eval_time.device), eval_time)
+            print(414, torch.searchsorted(torch.from_numpy(midpoints).to(eval_time.device), eval_time))
             manual_eval_indices[i] = insert_location
 
 
@@ -390,7 +348,7 @@ def get_evals(data_, model_path, savedir, start_point,
         if len(indices) == 0: continue # Didn't find anything
 
         indices = event_clustering(indices, smoothed_scores, 5*SAMPLE_RATE/SEGMENT_OVERLAP, DEVICE) # 5 seconds
-        indices = torch.cat([indices, manual_eval_indices])
+        indices = torch.cat([indices, manual_eval_indices]).int()
         filtered_final_score = smoothed_scores.index_select(0, indices)
         filtered_final_scaled_evals = scaled_evals.index_select(0, indices)
 
@@ -430,9 +388,7 @@ def get_evals(data_, model_path, savedir, start_point,
                 #print(res, res_sigmoid, filtered_final_score[i])
                 filtered_final_score[i] *= res_sigmoid
                 print(res, res_sigmoid, filtered_final_score[i])
-                print('final_final', final_final[0])
-                # passed_heuristics.append(final_final[0] < -1.75) #[0] since it was saving arrays(arrays)
-                passed_heuristics.append(final_final[0] < -0.46) #[0] since it was saving arrays(arrays)
+                passed_heuristics.append(final_final[0] < -1.75) #[0] since it was saving arrays(arrays)
 
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
@@ -446,9 +402,7 @@ def get_evals(data_, model_path, savedir, start_point,
         fm_scores = filtered_final_score
         strain_chunks = filtered_timeslide_chunks
 
-        if strain_chunks.shape[0] == 0:
-            print('EMPTY')
-            continue
+        if strain_chunks.shape[0] == 0: continue
         # plotting all these significant events
         n_points = strain_chunks.shape[2]
 
@@ -457,22 +411,17 @@ def get_evals(data_, model_path, savedir, start_point,
         bias_value = bias_value.cpu().numpy()
         smoothed_scores = smoothed_scores.cpu().numpy()
 
-
-        # j = 0
         for j in range(len(gwak_values)):
             indiv_fig = np.empty((2, 2), dtype=object)
             indiv_axs = np.empty((2, 2), dtype=object)
             for a in range(2):
-                #indiv_fig[a] = dict()
+
                 for b in range(2):
                     temp_fig, temp_axs = plt.subplots(1, 1, figsize=(8, 5))
-                    #print(a, b, temp_fig)
+
                     indiv_fig[a, b] = temp_fig
                     indiv_axs[a, b] = temp_axs
 
-            #assert 0
-
-            #fig, axs = plt.subplots(2, 2, figsize=(28, 17))
             loudest = indices[j]
             left_edge = 1024 //SEGMENT_OVERLAP
             right_edge = 1024 // SEGMENT_OVERLAP
@@ -546,64 +495,13 @@ def get_evals(data_, model_path, savedir, start_point,
             best_far = 0
             best_score = fm_scores[j][0] # [ [one element], [one element]] structure
             print("best_score", best_score)
-            base = f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}'
-            plt.savefig(base+'.png', dpi=300, bbox_inches="tight")
-            print('Saved the plot in', base)
+            base = f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_score:.2f}'
+            plt.savefig(f'{base}.png', dpi=300, bbox_inches="tight")
             rename_map = np.array([["strain", "H_qtransform"],["gwak_values", "L_qtransform"]])
             for a in range(2):
                 for b in range(2):
                     indiv_fig[a, b].savefig(f"{base}_{rename_map[a, b]}.png", dpi=200)
                     plt.close(indiv_fig[a, b])
-
-            # indexing into midpoints with loudest should carry over to original and recreated - if just taking the strongst point to recreate
-            #p = midpoints[loudest]
-
-def plot_strain(start_point, end_point):
-    # Load LIGO data
-    strainL1 = TimeSeries.get(f'L1:{CHANNEL}', start_point, end_point)
-    strainH1 = TimeSeries.get(f'H1:{CHANNEL}', start_point, end_point)
-    # Whiten, bandpass, and resample
-    sample_rate = 4096
-    bandpass_low = 30
-    bandpass_high = 1500
-    #strainL1 = strainL1.resample(sample_rate)
-    strainL1 = strainL1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainL1 = strainL1.resample(sample_rate)
-    strainH1 = strainH1.whiten().bandpass(bandpass_low, bandpass_high)
-    strainH1 = strainH1.resample(sample_rate)
-    np.save('strainL1.npy', strainL1[int(100.3*sample_rate):int(100.8*sample_rate)].value)
-    np.save('strainH1.npy', strainH1[int(100.3*sample_rate):int(100.8*sample_rate)].value)
-
-    plt.figure()
-    plt.plot(strainL1[int(100.3*sample_rate):int(100.8*sample_rate)])
-    plt.plot(strainH1[int(100.3*sample_rate):int(100.8*sample_rate)])
-    plt.show()
-
-    H_hq = strainH1.q_transform(outseg=(start_point+100, end_point-100), whiten=False)
-    L_hq = strainL1.q_transform(outseg=(start_point+100, end_point-100), whiten=False)
-
-    vmax = 25.0
-    vmin = 0
-
-    plot = H_hq.plot(figsize=[8, 4], vmax=vmax, vmin=vmin)
-    ax = plot.gca()
-    ax.set_xscale('seconds')
-    ax.set_yscale('log')
-    ax.set_ylim(20, 500)
-    ax.set_ylabel('Frequency [Hz]')
-    ax.grid(True, axis='y', which='both')
-    ax.colorbar(cmap='viridis', label='Normalized energy')
-    plot.show()
-
-    plot = L_hq.plot(figsize=[8, 4], vmax=vmax, vmin=vmin)
-    ax = plot.gca()
-    ax.set_xscale('seconds')
-    ax.set_yscale('log')
-    ax.set_ylim(20, 500)
-    ax.set_ylabel('Frequency [Hz]')
-    ax.grid(True, axis='y', which='both')
-    ax.colorbar(cmap='viridis', label='Normalized energy')
-    plot.show()
 
 
 def main(args):
@@ -612,92 +510,83 @@ def main(args):
     except FileExistsError:
         None
 
-    check_cat1 = False
-    check_cat2 = False
+    # anomaly_start_times = [
+    #     (1239155734.182, -1.1),
+    #     (1240878400.307, -2.31),
+    #     (1241104246.749, -1.8),
+    #     (1241624696.55, -1.03),
+    #     (1242442957.423, -2.69),
+    #     (1242459847.413, -1.12),
+    #     (1242827473.37, -1.13),
+    #     (1243305662.931, -6.0),
+    #     (1245998824.997, -1.03),
+    #     (1246417246.823, -1.21),
+    #     (1246487209.308, -3.59),
+    #     (1247281292.53, -1.01),
+    #     (1248280604.554, -1.11),
+    #     (1249035984.212, -1.35),
+    #     (1249635282.359, -1.49),
+    #     (1250981809.437, -1.4),
+    #     (1251009253.724, -4.76),
+    #     (1252679441.276, -1.09),
+    #     (1252833818.202, -1.11),
+    #     (1253638396.336, -1.4),
+    #     (1257416710.328, -1.21),
+    #     (1260164266.18, -1.1),
+    #     (1260358297.149, -1.01),
+    #     (1260825537.025, -1.75),
+    #     (1261020945.101, -1.03),
+    #     (1262203609.392, -3.98),
+    #     (1263013357.045, -6.49),
+    #     (1264316106.385, -1.55),
+    #     (1264683185.946, -1.04),
+    #     (1266473981.889, -1.02),
+    #     (1267610448.007, -1.92),
+    #     (1267610483.017, -6.13),
+    #     (1267617688.034, -5.61),
+    #     (1267878076.354, -5.74),
+    #     (1269242528.39, -2.0)
+    #     ]
 
-    trained_path = "/home/katya.govorkova/gwak-paper-final-models/"
-    o3_detection_segments = ['1243305662.9310', '1241104246.7490', '1249635282.3590',
-        '1242442957.4230', '1241624696.5500', '1251009253.7240', '1240050919.5040',
-        '1250981809.4370', '1238351461.2030', '1246417246.8230', '1246487209.3080',
-        '1249035984.2120', '1242827473.3700', '1248280604.5540', '1240878400.3070',
-        '1251709954.8220', '1249529264.6980', '1239155734.1820', '1253638396.3240',
-        '1251452408.2800', '1260825547.0250', '1265853772.5540', '1260164276.4340',
-        '1262676274.8130', '1260258000.1600', '1259852757.6790', '1267617687.9370',
-        '1261041997.0680', '1267610457.9930', '1264316116.3950', '1260288309.7230',
-        '1263906435.1910', '1263013367.0550', '1267610487.9370', '1262203619.4010',
-        '1262002542.6820']
+    # anomaly_start_times = ['1243305662.9310', '1241104246.7490', '1249635282.3590',
+    #     '1242442957.4230', '1241624696.5500', '1251009253.7240', '1240050919.5040',
+    #     '1250981809.4370', '1238351461.2030', '1246417246.8230', '1246487209.3080',
+    #     '1249035984.2120', '1242827473.3700', '1248280604.5540', '1240878400.3070',
+    #     '1251709954.8220', '1249529264.6980', '1239155734.1820', '1253638396.3240',
+    #     '1251452408.2800', '1260825547.0250', '1265853772.5540', '1260164276.4340',
+    #     '1262676274.8130', '1260258000.1600', '1259852757.6790', '1267617687.9370',
+    #     '1261041997.0680', '1267610457.9930', '1264316116.3950', '1260288309.7230',
+    #     '1263906435.1910', '1263013367.0550', '1267610487.9370', '1262203619.4010',
+    #     '1262002542.6820']
 
-    if check_cat1:
-        vetodef = DataQualityDict.from_veto_definer_file('data/H1L1V1-HOFT_C01_V1ONLINE_O3_BURST.xml')
-        vetodef.populate()
+    anomaly_start_times = [
+        1251009253.724, # Loudest BBH
+        1249529264.698, # Loudest non-BBH
+        1263013367.055, # Loudest Cat2
+    ]
 
-        h1_cat1 = DataQualityDict({k:v for k, v in vetodef.items() if v.ifo == 'H1' and v.category == 1})
-        h1_cat1_flag = h1_cat1.union()
+    trained_path = "/home/katya.govorkova/gwak-paper-final-models/trained/models/"
 
-        l1_cat1 = DataQualityDict({k:v for k, v in vetodef.items() if v.ifo == 'L1' and v.category == 1})
-        l1_cat1_flag = l1_cat1.union()
+    for A in anomaly_start_times:
+        A = int(float(A))
+        B = A + 3600
+        print("starting,", A)
+        H, L = whiten_bandpass_resample_new_order(A, B)
 
-        l1_cat1_segments = [(i[0], i[1]) for i in l1_cat1_flag.active]
-        h1_cat1_segments = [(i[0], i[1]) for i in h1_cat1_flag.active]
-
-        cat1_segments = []
-        for det in o3_detection_segments:
-            det = float(det)
-            if det<1256655618: det+=10
-            if check_segment_overlap(det, l1_cat1_segments) or \
-                check_segment_overlap(det, h1_cat1_segments):
-                cat1_segments.append(det)
-        print('All Cat1 segments are:', cat1_segments)
-
-    if check_cat2:
-        l1_cat2_filename = '/home/eric.moreno/QUAK/katya/gw-anomaly/output/L1_CAT2_ACTIVE_SEGMENTS.txt'
-        l1_cat2_segments = read_segments_from_file(l1_cat2_filename)
-
-        h1_cat2_filename = '/home/eric.moreno/QUAK/katya/gw-anomaly/output/H1_CAT2_ACTIVE_SEGMENTS.txt'
-        h1_cat2_segments = read_segments_from_file(h1_cat2_filename)
-
-        cat2_segments = []
-        for det in o3_detection_segments:
-            det = float(det)
-            if det<1256655618: det+=10
-            if check_segment_overlap(det, l1_cat2_segments) or \
-                check_segment_overlap(det, h1_cat2_segments):
-                cat2_segments.append(det)
-        print('All Cat2 segments are:', cat2_segments)
-        assert 0
-
-    savedir = args.savedir+'/O3'
-    try:
-        os.makedirs(savedir)
-    except FileExistsError:
-        None
-
-    for i, det in enumerate(o3_detection_segments):
-        det = float(det)
-        if det<1256655618: det+=10
-
-        # first, plot the strain
-        # plot_strain(det-100.5,det+100.5)
-
-        A, B = det,det+3600
-
-        H, L, H_rbw, L_rbw = resample_bandpass_whiten(A, B)
-        if H is None and L is None: continue
+        Hclean, Lclean = whiten_bandpass_resample(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
-        data_rbw = np.vstack([np.array(H_rbw.data), np.array(L_rbw.data)])
 
-        if data.shape[-1] < 1e5: return None
-        get_evals(data, trained_path, savedir, int(A), [H, L],
-            data_rbw=data_rbw,
-            detection_point=det,
-            manual_eval_times=[1000])
+        base = 3554.75
+        get_evals(data, trained_path, args.savedir, int(A), [Hclean, Lclean],
+                  manual_eval_times=[base])
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Required arguments
-    parser.add_argument('--savedir', type=str, default='output/paper')
+    parser.add_argument('--savedir', type=str, default='output/paperO3',
+                        help='File with valid segments')
 
     args = parser.parse_args()
     main(args)
