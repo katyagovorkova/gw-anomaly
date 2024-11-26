@@ -527,24 +527,24 @@ def make_roc_curves(
         amp_measure = amp_measures[k]
         tag = tags[k]
 
-        if done_fm_evals == None:
-            if RETURN_INDIV_LOSSES:
-                fm_vals = metric_coefs(torch.from_numpy(
-                    data).float().to(DEVICE)).detach().cpu().numpy()
-            else:
-                fm_vals = np.dot(data, metric_coefs) + bias
-            print(539, fm_vals.shape)
-            if smoothing_window != 1:
-                fm_vals = np.apply_along_axis(
-                    lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
-                    axis=1,
-                    arr=fm_vals)
+        # if done_fm_evals == None:
+        #     if RETURN_INDIV_LOSSES:
+        #         fm_vals = metric_coefs(torch.from_numpy(
+        #             data).float().to(DEVICE)).detach().cpu().numpy()
+        #     else:
+        #         fm_vals = np.dot(data, metric_coefs) + bias
+        #     print(539, fm_vals.shape)
+        #     if smoothing_window != 1:
+        #         fm_vals = np.apply_along_axis(
+        #             lambda m: np.convolve(m, np.ones(smoothing_window)/smoothing_window, mode='same'),
+        #             axis=1,
+        #             arr=fm_vals)
 
-            fm_vals = np.min(fm_vals, axis=1)
-            assert False
-        else:
-            print(554, "loading from previous")
-            fm_vals = done_fm_evals[tag]
+        #     fm_vals = np.min(fm_vals, axis=1)
+        #     assert False
+        # else:
+        #     print(554, "loading from previous")
+        fm_vals = done_fm_evals[tag]
 
         print(546, fm_vals.shape)
         rename_map = {
@@ -561,12 +561,8 @@ def make_roc_curves(
         metric_val_label = far_to_metric(
             365*24*3600, far_hist) #
 
-        # positive detection are the ones below the curve
-        if not hrss:
-            am_bins = np.arange(0, VARYING_SNR_HIGH, 1)
-        else:
-            axs.set_xscale("log")
-            am_bins = np.logspace(-23, -18, 200) # not yet clear what this will look like
+        # this is calibrated 1/year FM
+        metric_val_label = -2.4299999999999997
 
         nbins = len(am_bins)
         am_bin_detected = [0]*nbins
@@ -801,7 +797,7 @@ def make_roc_curves_smoothing_comparison(data,
 
 def main(args):
 
-    model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
+    model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
     model.load_state_dict(torch.load(
         args.fm_model_path, map_location=GPU_NAME))
     weight = np.concatenate([model.layer.weight.data.cpu().numpy()[0], np.array([0])])
@@ -852,14 +848,14 @@ def main(args):
     arr[-1] = weight[-1]
     weights.append(arr)
 
-    type1 = True
+    type1 = False
     do_snr_vs_far = 0
     do_fake_roc = type1
     do_3_panel_plot = type1
     do_combined_loss_curves = type1
     do_train_signal_example_plots = type1
     do_anomaly_signal_show = type1
-    do_learned_fm_weights = 1
+    do_learned_fm_weights = 0
     do_make_roc_curves = 1
     do_heuristic_efficiency = 1
 
@@ -871,40 +867,40 @@ def main(args):
 
 
         if RETURN_INDIV_LOSSES:
-            model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
+            model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
             model.load_state_dict(torch.load(
                 args.fm_model_path, map_location=GPU_NAME))
 
         data_dict = {}
         snrs_dict = {}
         hrss_dict = {}
-        for tag in tags:
+        # for tag in tags:
 
-            print(f'loading {tag}')
-            ts = time.time()
-            data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
+        #     print(f'loading {tag}')
+        #     ts = time.time()
+        #     data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
 
-            print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
+        #     print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
 
-            data = (data - means) / stds
-            data = data#[1000:]
+        #     data = (data - means) / stds
+        #     data = data#[1000:]
 
-            snrs = np.load(f"{args.data_predicted_path}/data/{tag}_varying_snr_values.npy")
-            data_dict[tag] = data
-            snrs_dict[tag] = snrs
+        #     snrs = np.load(f"{args.data_predicted_path}/data/{tag}_varying_snr_values.npy")
+        #     data_dict[tag] = data
+        #     snrs_dict[tag] = snrs
 
         X3 = ['bbh', 'sglf', 'sghf', 'wnbhf', 'supernova', 'wnblf']
 
-        far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
+        # far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
 
-        done_fm_evals = amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
-                            [snrs_dict[elem] for elem in X3],
-                            model,
-                            far_hist,
-                            X3,
-                            args.plot_savedir,
-                            f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
-                            bias)
+        # done_fm_evals = amp_measure_vs_far_plotting([data_dict[elem] for elem in X3],
+        #                     [snrs_dict[elem] for elem in X3],
+        #                     model,
+        #                     far_hist,
+        #                     X3,
+        #                     args.plot_savedir,
+        #                     f'Detection Efficiency, SNR, window: {SMOOTHING_KERNEL}',
+        #                     bias)
 
         if do_heuristic_efficiency:
             fm_model_path = (f"{args.data_predicted_path}/trained/fm_model.pt")
@@ -915,25 +911,26 @@ def main(args):
             linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
             bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
 
-            mean_norm = torch.from_numpy(norm_factors[0]).to(DEVICE)#[:-1]
-            std_norm = torch.from_numpy(norm_factors[1]).to(DEVICE)#[:-1]
+            mean_norm = torch.from_numpy(means).to(DEVICE)#[:-1]
+            std_norm = torch.from_numpy(stds).to(DEVICE)#[:-1]
 
-            tags = ['bbh', 'sghf']#, 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
+            tags = ['bbh', 'sghf', 'wnbhf', 'supernova', 'wnblf', 'sglf', 'sghf']
             for tag in tags:
 
-                print(f'loading {tag}')
-                ts = time.time()
-                data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
-                data = torch.from_numpy(data).to(DEVICE).float()
+                # print(f'loading {tag}')
+                # ts = time.time()
+                # data = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals.npy')
+                # data = torch.from_numpy(data).to(DEVICE).float()
 
-                print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
+                # print(f'{tag} loaded in {time.time()-ts:.3f} seconds')
 
-                data = (data - means) / stds
-                data = data#[1000:]
+                # data = (data - means) / stds
+                # data = data#[1000:]
                 snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
-                passed_herustics = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals_heuristic_res.npy')
+                # passed_herustics = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals_heuristic_res.npy')
+                passed_herustics = np.load(f'output/O3av2/evaluated/heuristic/SIG_EVAL_{tag}_heur_model_evals.npy')
 
-                data_dict[tag] = data
+                data_dict[tag] = passed_herustics
                 snrs_dict[tag] = snrs
 
 
@@ -942,7 +939,7 @@ def main(args):
             far_hist = np.load(f'{args.data_predicted_path}/far_bins_{SMOOTHING_KERNEL}.npy')
 
             if RETURN_INDIV_LOSSES:
-                model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)-1).to(DEVICE)
+                model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
                 model.load_state_dict(torch.load(
                     args.fm_model_path, map_location=GPU_NAME))
 
@@ -955,7 +952,7 @@ def main(args):
                             f'ROC plots, SNR, window: {SMOOTHING_KERNEL}',
                             bias,
                             smoothing_window=SMOOTHING_KERNEL,
-                            done_fm_evals=done_fm_evals)
+                            done_fm_evals=data_dict)
             # make_roc_curves([data_dict[elem] for elem in X3],
             #                     [hrss_dict[elem] for elem in X3],
             #                     model,

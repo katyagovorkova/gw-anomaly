@@ -155,18 +155,18 @@ rule all_timeslides_for_far:
 
 rule evaluate_signals:
     input:
-        model_path = expand(rules.train_gwak.output.model_file,
-                            dataclass=modelclasses,
-                            version='{version}'),
         source_file = expand('{datalocation}/{dataclass}.npz',
                              dataclass='{signal_dataclass}',
                              datalocation=DATA_LOCATION),
     params:
+        model_path = expand(rules.train_gwak.output.model_file,
+                            dataclass=modelclasses,
+                            version='{version}'),
         from_saved_models = True,
     output:
         save_file = 'output/{version}/evaluated/{signal_dataclass}_evals.npy',
     shell:
-        'python3 scripts/evaluate_data.py {input.source_file} {output.save_file} {input.model_path} {params.from_saved_models}'
+        'python3 scripts/evaluate_data.py {input.source_file} {output.save_file} {params.model_path} {params.from_saved_models}'
 
 rule plot_cut_efficiency:
     input:
@@ -303,11 +303,11 @@ rule quak_plotting_prediction_and_recreation:
 
 rule plot_results:
     input:
-        dependencies = [rules.merge_far_hist.output.save_path,
-            expand(rules.evaluate_signals.output.save_file,
-                signal_dataclass=dataclasses,
-                version=VERSION)],
-        fm_model_path = f'{FM_LOCATION}/fm_model.pt'
+        # dependencies = [rules.merge_far_hist.output.save_path,
+        #     expand(rules.evaluate_signals.output.save_file,
+        #         signal_dataclass=dataclasses,
+        #         version=VERSION)],
+        fm_model_path = f'{FM_LOCATION}fm_model.pt'
     params:
         evaluation_dir = '/home/katya.govorkova/gwak-paper-final-models/',
         save_path = directory(f'output/{VERSION}/paper/')

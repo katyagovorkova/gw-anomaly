@@ -6,6 +6,7 @@ from scipy.signal import welch
 from scipy.stats import pearsonr
 from gw_anomaly.scripts.models import LinearModel
 from gw_anomaly.scripts.gwak_predict import quak_eval
+from torch.nn.functional import conv1d
 from gw_anomaly.scripts.helper_functions import (
     std_normalizer_torch,
     split_into_segments_torch,
@@ -32,6 +33,12 @@ from config import (
     FACTORS_NOT_USED_FOR_FM,
 
 )
+
+def sig_prob_function(evals, scale=40):
+    sigmoid = lambda x: 1/(1+np.exp(-x))
+    return 1-(sigmoid(scale * (evals-0.5)))
+
+
 def compute_signal_strength_chop_sep(x, y):
     psd0 = welch(x)[1]
     psd1 = welch(y)[1]
@@ -90,7 +97,6 @@ def parse_strain(x):
     # take strain, compute the long sig strenght & pearson
     # split it up, do the same thing for short
     long_pearson, shift_idx = shifted_pearson(x[0], x[1], 50, len(x[0])-50)
-    #long_sig_strength = compute_signal_strength_chop(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx] )
     HSS, LSS = compute_signal_strength_chop_sep(x[0, 50:-50], x[1, 50+shift_idx:len(x[0])-50+shift_idx])
     return long_pearson, HSS, LSS
 
@@ -197,11 +203,10 @@ def main(args):
 
     DEVICE = torch.device(GPU_NAME)
 
-    model_path = args.model_path if not args.from_saved_models else \
-        [os.path.join(MODELS_LOCATION, os.path.basename(f)) for f in args.model_path]
+    model_path = ['/home/katya.govorkova/gwak-paper-final-models/trained/models/bbh.pt', '/home/katya.govorkova/gwak-paper-final-models/trained/models/sglf.pt', '/home/katya.govorkova/gwak-paper-final-models/trained/models/sghf.pt', '/home/katya.govorkova/gwak-paper-final-models/trained/models/background.pt', '/home/katya.govorkova/gwak-paper-final-models/trained/models/glitches.pt']
     #print(args.data_path)
     #assert 0
-    
+
     data = np.load(args.data_path)['data']
     print("data path", args.data_path)
     print(f'loaded data shape: {data.shape}')
@@ -213,7 +218,9 @@ def main(args):
     if data.shape[0] == 2:
         data = data.swapaxes(0, 1)
     n_batches_total = data.shape[0]
-    
+
+
+    print(model_path)
     _, timeaxis_size, feature_size = full_evaluation(
         data[:5], model_path, DEVICE)[0].cpu().numpy().shape
     result = np.zeros((n_batches_total, timeaxis_size, feature_size))
@@ -226,33 +233,40 @@ def main(args):
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = output.cpu().numpy()
     np.save(args.save_path, result)
 
-    model_path = f"{MODELS_LOCATION}/model_heuristic.h5"
+    orig_kernel = 50
+    kernel_len = int(orig_kernel * 5/SEGMENT_OVERLAP)
+    kernel = torch.ones((1, kernel_len)).float().to(DEVICE)/kernel_len
+    kernel = kernel[None, :, :]
+
+    model_path = f"/home/katya.govorkova/gwak-paper-final-models/trained/model_heuristic.h5"
     model_heuristic = BasedModel().to(DEVICE)
     model_heuristic.load_state_dict(torch.load(model_path))
 
-    data_eval_use_heuristic = False
+    data_eval_use_heuristic = True
     if data_eval_use_heuristic:
-        SNRs = np.load(f"{args.data_path}_SNR.npz.npy")
+        SNRs = np.load(f"{args.data_path}".replace(".npz", "_SNR.npz.npy"))
         # need to get the point of highest score
 
-        norm_factors = np.load(f"{FM_LOCATION}/norm_factor_params.npy")
+        norm_factors = np.load(f"/home/katya.govorkova/gwak-paper-final-models/trained/norm_factor_params.npy")
 
-        fm_model_path = (f"{FM_LOCATION}/fm_model.pt")
+        fm_model_path = (f"/home/katya.govorkova/gwak-paper-final-models/trained/fm_model.pt")
         fm_model = LinearModel(21-len(FACTORS_NOT_USED_FOR_FM)).to(DEVICE)
         fm_model.load_state_dict(torch.load(
             fm_model_path, map_location=GPU_NAME))
 
         linear_weights = fm_model.layer.weight.detach()#.cpu().numpy()
-        # linear_weights[:, -2] += linear_weights[:, -1]
-        # linear_weights = linear_weights[:, :-1]
-        # norm_factors = norm_factors[:, :-1]
+        bias_value = fm_model.layer.bias.detach()#.cpu().numpy()
+        linear_weights[:, -2] += linear_weights[:, -1]
+        linear_weights = linear_weights[:, :-1]
+        norm_factors = norm_factors[:, :-1]
 
         result = torch.from_numpy((result-norm_factors[0])/norm_factors[1]).float().to(DEVICE)
         scaled_evals = torch.multiply(result, linear_weights[None, :])#[0, :]
-        scores = (scaled_evals.sum(axis=2))#[:, None]
-        scores = scores.detach().cpu().numpy()
-        strongest = np.argmin(scores, axis=1)
-        scaled_evals = scaled_evals.detach().cpu().numpy()
+        scores = (scaled_evals.sum(axis=2) + bias_value)#[:, None]
+        scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
+            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
+            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
         #long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
         #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         passed = []
@@ -285,6 +299,11 @@ def main(args):
             strain_feats = parse_strain(seg)
             together = np.concatenate([strain_feats, gwak_filtered[i]])
             heur_res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
+            res_sigmoid = sig_prob_function(heur_res)
+            heur_res = res_sigmoid * smoothed_scores[i]
+            heur_res = heur_res[0]
+            print('heur_res', res_sigmoid, gwak_filtered[i], heur_res)
+
             build_heur_model_evals.append(heur_res)
             # gwak_filtered
             # build_dataset_strain.append([pearson_, HSS, LSS  ])
