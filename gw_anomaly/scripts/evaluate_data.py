@@ -231,6 +231,7 @@ def main(args):
         output, midpoints = full_evaluation(
             data[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)], model_path, DEVICE)#[0].cpu().numpy()
         result[DATA_EVAL_MAX_BATCH * i:DATA_EVAL_MAX_BATCH * (i + 1)] = output.cpu().numpy()
+    #print(result)
     np.save(args.save_path, result)
 
     orig_kernel = 50
@@ -262,11 +263,17 @@ def main(args):
 
         result = torch.from_numpy((result-norm_factors[0])/norm_factors[1]).float().to(DEVICE)
         scaled_evals = torch.multiply(result, linear_weights[None, :])#[0, :]
+        #print(266, scaled_evals.shape)
         scores = (scaled_evals.sum(axis=2) + bias_value)#[:, None]
-        scaled_evals = conv1d(scaled_evals.transpose(0, 1).float()[:, None, :],
-            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
-        smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
-            kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        #scaled_evals = conv1d(scaled_evals.transpose(0, 1).float(),
+        #    kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        #smoothed_scores = conv1d(scores.transpose(0, 1).float()[:, None, :],
+        #    kernel, padding="same").transpose(0, 1)[0].transpose(0, 1)
+        smoothed_scores = scores.cpu()
+        scaled_evals = scaled_evals.cpu()
+        #print(271, smoothed_scores)
+        #print(smoothed_scores[0].min())
+        #assert 0
         #long_relation = np.load("/home/ryan.raikman/share/gwak/long_relation.npy")
         #short_relation = np.load("/home/ryan.raikman/share/gwak/short_relation.npy")
         passed = []
@@ -295,14 +302,19 @@ def main(args):
 
             #if SNRs[i] > 12:
             SNRs__.append(SNRs[i])
+            #print(data.shape, strain_center)
             seg = data[i, :, strain_center-1024:strain_center+1024]
+            #print(306, seg.shape)
             strain_feats = parse_strain(seg)
             together = np.concatenate([strain_feats, gwak_filtered[i]])
             heur_res = model_heuristic(torch.from_numpy(together[None, :]).float().to(DEVICE)).item()
             res_sigmoid = sig_prob_function(heur_res)
-            heur_res = res_sigmoid * smoothed_scores[i]
-            heur_res = heur_res[0]
-            print('heur_res', res_sigmoid, gwak_filtered[i], heur_res)
+            #print(312, smoothed_scores.shape)
+            #assert 0
+            heur_res = res_sigmoid * smoothed_scores[i].min()
+            #heur_res = heur_res[0]
+            #print(316, heur_res)
+            #print('heur_res', res_sigmoid, gwak_filtered[i], heur_res)
 
             build_heur_model_evals.append(heur_res)
             # gwak_filtered
