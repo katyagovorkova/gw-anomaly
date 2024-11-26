@@ -526,6 +526,7 @@ def make_roc_curves(
         data = datas[k]
         amp_measure = amp_measures[k]
         tag = tags[k]
+        print('plotting', tag)
 
         # if done_fm_evals == None:
         #     if RETURN_INDIV_LOSSES:
@@ -545,6 +546,7 @@ def make_roc_curves(
         # else:
         #     print(554, "loading from previous")
         fm_vals = done_fm_evals[tag]
+        print(tag, fm_vals[:100])
 
         print(546, fm_vals.shape)
         rename_map = {
@@ -563,6 +565,8 @@ def make_roc_curves(
 
         # this is calibrated 1/year FM
         metric_val_label = -2.4299999999999997
+
+        am_bins = np.arange(0, VARYING_SNR_HIGH, 1)
 
         nbins = len(am_bins)
         am_bin_detected = [0]*nbins
@@ -926,7 +930,8 @@ def main(args):
 
                 # data = (data - means) / stds
                 # data = data#[1000:]
-                snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+                # snrs = np.load(f'{args.data_predicted_path}/data/{tag}_varying_snr_SNR.npz.npy')#[1000:]
+                snrs = np.load(f'output/O3av2/evaluated/heuristic/SIG_EVAL{tag}_SNRs.npy')
                 # passed_herustics = np.load(f'{args.data_predicted_path}/evaluated/{tag}_varying_snr_evals_heuristic_res.npy')
                 passed_herustics = np.load(f'output/O3av2/evaluated/heuristic/SIG_EVAL_{tag}_heur_model_evals.npy')
 

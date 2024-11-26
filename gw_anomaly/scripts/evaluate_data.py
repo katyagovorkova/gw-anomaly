@@ -331,7 +331,7 @@ def main(args):
             None
         class_name = args.save_path.split("/")[-1].split("_")[0]
         np.save(f"{heuristic_dir}/SIG_EVAL_{class_name}_heur_model_evals.npy", np.array(build_heur_model_evals))
-        np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
+        # np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_gwak_feats.npy", np.array(build_data_gwak_features))
         np.save(f"{heuristic_dir}/SIG_EVAL{class_name}_SNRs.npy", np.array(SNRs__))
 
 
