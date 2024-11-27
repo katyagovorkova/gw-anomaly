@@ -6,6 +6,7 @@ from gwpy.timeseries import TimeSeries
 from astropy import units as u
 import matplotlib.pyplot as plt
 from models import LinearModel, GwakClassifier
+from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from evaluate_data import full_evaluation
 import json
 import matplotlib
@@ -205,7 +206,7 @@ def whiten_bandpass_resample(
     device = torch.device(GPU_NAME)
 
     try:
-        start_point, end_point = int(start_point)+10, int(end_point)-10
+        start_point, end_point = int(start_point)-20, int(end_point)-20
         strainL1 = TimeSeries.fetch_open_data(f'L1', start_point, end_point)
         strainH1 = TimeSeries.fetch_open_data(f'H1', start_point, end_point)
 
@@ -276,7 +277,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         final_values = final_values[0]
 
         # Set the threshold here
-        FAR_2days = -1 # lowest FAR bin we want to worry about
+        FAR_2days = 0 # lowest FAR bin we want to worry about
 
         # Inference to save scores (final metric) and scaled_evals (GWAK space * weights unsummed)
         final_values_slx = (final_values - mean_norm)/std_norm
@@ -324,7 +325,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 res_sigmoid = sig_prob_function(res)
                 final_final = res_sigmoid * filtered_final_score[i]
                 filtered_final_score[i] *= res_sigmoid
-                passed_heuristics.append(final_final[0] < -1) #[0] since it was saving arrays(arrays)
+                passed_heuristics.append(final_final[0] < -0.5) #[0] since it was saving arrays(arrays)
 
 
             filtered_final_scaled_evals = filtered_final_scaled_evals[passed_heuristics]
@@ -348,103 +349,154 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         smoothed_scores = smoothed_scores.cpu().numpy()
 
         for j in range(len(gwak_values)):
-            indiv_fig = np.empty((2, 2), dtype=object)
-            indiv_axs = np.empty((2, 2), dtype=object)
-            for a in range(2):
-                #indiv_fig[a] = dict()
-                for b in range(2):
-                    temp_fig, temp_axs = plt.subplots(1, 1, figsize=(8, 5))
-                    #print(a, b, temp_fig)
-                    indiv_fig[a, b] = temp_fig
-                    indiv_axs[a, b] = temp_axs
+            fig1, axs1 = plt.subplots(4, 1, figsize=(10, 12) ) #, sharex=True)  # Strain and GWAK values (shared x-axis)
+            # fig2, axs2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True, constrained_layout=True)  # Hanford and Livingston Q-transforms (shared y-axis)
 
-            #assert 0
-
-            #fig, axs = plt.subplots(2, 2, figsize=(28, 17))
             loudest = indices[j]
-            left_edge = 1024 //SEGMENT_OVERLAP
+            left_edge = 1024 // SEGMENT_OVERLAP
             right_edge = 1024 // SEGMENT_OVERLAP
-            quak_evals_ts = np.linspace(0, (left_edge+right_edge)*SEGMENT_OVERLAP/SAMPLE_RATE  , left_edge+right_edge)
-            labels = ['background','background', 'bbh','bbh', 'glitch', 'glitch', 'sglf', 'sglf', 'sghf', 'sghf', 'freq corr']
-            cols = ['purple', 'blue', 'green', 'salmon', 'goldenrod', 'brown' ]
+            quak_evals_ts = np.linspace(0, (left_edge + right_edge) * SEGMENT_OVERLAP / SAMPLE_RATE, left_edge + right_edge)
+
+            labels = ['Background', 'Background', 'BBH', 'BBH', 'Glitch', 'Glitch', 'SG (64-512 Hz)', 'SG (64-512 Hz)', 'SG (512-1024 Hz)', 'SG (512-1024 Hz)', 'Frequency correlation']
+            cols = [
+                "#f4a3c1",  # Background (Soft Pink)
+                "#ffd700",  # BBH (Yellow - Gold)
+                "#2a9d8f",  # Glitch (Emerald Green)
+                "#708090",  # SGLF (Light Slate Gray)
+                "#00bfff",  # SGHF (Deep Sky Blue)
+                "#cd5c5c",  # Freq Corr (Indian Red)
+                "#006400",  # Final Metric (Dark Green)
+                "#daa520",  # Hanford (Goldenrod)
+                "#ff6347",  # Livingston (Tomato)
+            ]
+            # Strain plot
+            strain_ts = np.linspace(0, len(strain_chunks[j, 0, :]) / SAMPLE_RATE, len(strain_chunks[j, 0, :]))
+            axs1[2].plot(strain_ts, strain_chunks[j, 0, :], label='Hanford', alpha=0.8, c="#6c5b7b")
+            axs1[2].plot(strain_ts, strain_chunks[j, 1, :], label='Livingston', alpha=0.8, c="#f29e4c")
+            axs1[2].set_ylabel('Strain', fontsize=14)
+            axs1[2].legend()
+            # axs1[0].set_title(f'GPS time: {start_point + midpoints[loudest] / SAMPLE_RATE + hour_split * eval_at_once_len:.1f}')
+            # Remove x-axis ticks
+            axs1[2].tick_params(axis='x', which='both', bottom=False, top=False)
+            axs1[2].set_xticklabels([])
+
+            # GWAK values plot
             for i in range(scaled_evals.shape[1]):
-                line_type = "-"
-                if i% 2 == 1:
-                    line_type = "--"
-                if i % 2 == 0 or labels[i] in ["freq corr"]:
+                line_type = "-" if i % 2 == 0 else "--"
+                axs1[3].plot(
+                    1000 * quak_evals_ts,
+                    scaled_evals[loudest - left_edge:loudest + right_edge, i],
+                    label=labels[i] if i % 2 == 0 or labels[i] in ["Frequency correlation"] else None,
+                    c=cols[i // 2],
+                    linestyle=line_type
+                )
+            axs1[3].plot(
+                1000 * quak_evals_ts,
+                smoothed_scores[loudest - left_edge:loudest + right_edge] - bias_value,
+                label='Final metric',
+                c='black'
+            )
+            axs1[3].set_xlabel("Time (ms)", fontsize=14)
+            axs1[3].set_ylabel("Final metric contributions", fontsize=14)
+            axs1[3].legend()
 
-                    indiv_axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
-                                label = labels[i], c=cols[i//2], linestyle=line_type)
+            # Define a custom colormap with pink in the middle
+            custom_cmap = LinearSegmentedColormap.from_list("custom_cmap", ["#1f77b4", "#f4a3c1", "#ffd700"], N=256)
 
-                else:
-                    indiv_axs[1, 0].plot(1000*quak_evals_ts, scaled_evals[loudest-left_edge:loudest+right_edge, i],
-                                    c=cols[i//2], linestyle=line_type)
+            # Define shared color scale range and normalization (pink in the middle)
+            vmin, vcenter, vmax = 0, 12.5, 25  # Pink at 12.5, scale from 0 to 25
+            norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
-
-            indiv_axs[1, 0].plot(1000*quak_evals_ts, smoothed_scores[loudest-left_edge:loudest+right_edge]-bias_value, label = 'final metric', c='black')
-            indiv_axs[1, 0].plot([], [], '-', label="Hanford", c="black")
-            indiv_axs[1, 0].plot([], [], '--', label="Livingston", c="black")
-            indiv_axs[1, 0].legend(handlelength=3, fontsize=17)
-            indiv_axs[1, 0].set_xlabel("Time, (ms)")
-            indiv_axs[1, 0].set_ylabel("Final Metric Contribution")
-
-            strain_ts = np.linspace(0, len(strain_chunks[j, 0, :])/SAMPLE_RATE, len(strain_chunks[j, 0, :]))
-            indiv_axs[0, 0].plot(strain_ts, strain_chunks[j, 0, :], label = 'Hanford', alpha=0.8)
-            indiv_axs[0, 0].plot(strain_ts, strain_chunks[j, 1, :], label = 'Livingston', alpha=0.8)
-            indiv_axs[0, 0].set_xlabel('Time, (ms)')
-            indiv_axs[0, 0].set_ylabel('strain')
-            indiv_axs[0, 0].legend()
-            indiv_axs[0, 0].set_title(f'gps time: {start_point + midpoints[loudest]/SAMPLE_RATE + hour_split*eval_at_once_len:.2f}')
+            # Hanford and Livingston Q-Transforms
             p = midpoints[loudest]
+            left_edge = 1024
+            right_edge = 1024
+            q_edge = int(7.5 * 4096)
 
-            do_q_scan = True
-            if do_q_scan:
-                # plot the Q-scans
-                left_edge = 1024
-                right_edge = 1024
-                q_edge = int(7.5*4096)
-                H_strain = gwpy_timeseries[0][p-left_edge-q_edge + eval_at_once_len*hour_split*SAMPLE_RATE:p+right_edge+q_edge + eval_at_once_len*hour_split*SAMPLE_RATE]
-                L_strain = gwpy_timeseries[1][p-left_edge-q_edge + eval_at_once_len*hour_split*SAMPLE_RATE:p+right_edge+q_edge + eval_at_once_len*hour_split*SAMPLE_RATE]
-                t0 = H_strain.t0.value
-                dt = H_strain.dt.value
+            H_strain = gwpy_timeseries[0][
+                p - left_edge - q_edge + eval_at_once_len * hour_split * SAMPLE_RATE:
+                p + right_edge + q_edge + eval_at_once_len * hour_split * SAMPLE_RATE
+            ]
+            L_strain = gwpy_timeseries[1][
+                p - left_edge - q_edge + eval_at_once_len * hour_split * SAMPLE_RATE:
+                p + right_edge + q_edge + eval_at_once_len * hour_split * SAMPLE_RATE
+            ]
 
-                H_hq = H_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
-                L_hq = L_strain.q_transform(outseg=(t0+q_edge*dt, t0+q_edge*dt+(left_edge+right_edge)*dt), whiten=False)
-                f = np.array(H_hq.yindex)
-                t = np.array(H_hq.xindex)
-                #t=strain_ts *1000
-                t -= t[0]
+            t0 = H_strain.t0.value
+            dt = H_strain.dt.value
+            H_hq = H_strain.q_transform(outseg=(t0 + q_edge * dt, t0 + q_edge * dt + (left_edge + right_edge) * dt), whiten=False)
+            L_hq = L_strain.q_transform(outseg=(t0 + q_edge * dt, t0 + q_edge * dt + (left_edge + right_edge) * dt), whiten=False)
 
-                im_H = indiv_axs[0, 1].pcolormesh(t*1000, f, np.array(H_hq).T, vmax = 25, vmin = 0)
-                indiv_fig[0, 1].colorbar(im_H, ax=indiv_axs[0, 1], label = "spectral power")
-                indiv_axs[0, 1].set_yscale("log")
-                indiv_axs[0, 1].set_xlabel("Time (ms)")
-                indiv_axs[0, 1].set_ylabel("Freq (Hz)")
-                indiv_axs[0, 1].set_title("Hanford Q-Transform")
+            f = np.array(H_hq.yindex)
+            t = np.array(H_hq.xindex)
+            t -= t[0]
 
-                im_L  = indiv_axs[1, 1].pcolormesh(t*1000, f, np.array(L_hq).T, vmax = 25, vmin = 0)
-                indiv_fig[1, 1].colorbar(im_L, ax=indiv_axs[1, 1], label = "spectral power")
-                indiv_axs[1, 1].set_yscale("log")
-                indiv_axs[1, 1].set_xlabel("Time (ms)")
-                indiv_axs[1, 1].set_ylabel("Freq (Hz)")
-                indiv_axs[1, 1].set_title("Livingston Q-Transform")
+            # Create the Q-Transform plots
+            im_H = axs1[0].pcolormesh(
+                t * 1000,
+                f,
+                np.array(H_hq).T,
+                cmap=custom_cmap,
+                norm=norm,
+                shading="auto"
+            )
+            axs1[0].set_yscale("log")
+            axs1[0].set_ylabel("Frequency (Hz)", fontsize=14)
+            # axs1[1].set_title("Hanford Q-Transform", fontsize=14)
+            axs1[1].tick_params(axis='x', which='both', bottom=False, top=False)
+            axs1[0].tick_params(axis='x', which='both', bottom=False, top=False)
+            axs1[1].set_xticklabels([])
+            axs1[0].set_xticklabels([])
 
-            #FINAL_FAR_HISTOGRAM = np.load('/n/home00/emoreno/katya_LITERALLY/gw_anomaly/ryan/FINAL_FINAL_HISTOGRAM.npy')
-            #best_far = get_far(filtered_final_score[j], FINAL_FAR_HISTOGRAM)[0]
-            best_far = 0
-            best_score = fm_scores[j][0] # [ [one element], [one element]] structure
-            print("best_score", best_score)
-            base = f'{savedir}/{start_point+p/SAMPLE_RATE:.3f}_{best_far}_{best_score:.2f}'
-            plt.savefig(base+'.png', dpi=300, bbox_inches="tight")
-            pickle.dump(indiv_axs, open(f'{base}.pickle', 'wb'))
-            print('Saved the plot in', base)
-            rename_map = np.array([["strain", "H_qtransform"],["gwak_values", "L_qtransform"]])
-            for a in range(2):
-                for b in range(2):
-                    indiv_fig[a, b].savefig(f"{base}_{rename_map[a, b]}.png", dpi=200)
-                    pickle.dump(indiv_fig, open(f'{base}_{rename_map[a, b]}.pickle', 'wb'))
-                    plt.close(indiv_fig[a, b])
 
+            im_L = axs1[1].pcolormesh(
+                t * 1000,
+                f,
+                np.array(L_hq).T,
+                cmap=custom_cmap,
+                norm=norm,
+                shading="auto"
+            )
+            axs1[1].set_yscale("log")
+            # axs1[1].set_xlabel("Time (ms)", fontsize=12)
+            axs1[1].set_ylabel("Frequency (Hz)", fontsize=14)
+            # axs1[1].set_title("Livingston Q-Transform", fontsize=14)
+
+            # Add shared colorbar
+            cbar = fig1.colorbar(
+                im_H,
+                ax=axs1[0],
+                location="top",
+                pad=0.05,
+                # shrink=0.9,
+                aspect=30
+            )
+            cbar.set_label("Spectral Power", fontsize=12)
+
+            # Adjust layout
+            fig1.tight_layout()
+
+
+
+            # Save figures
+            base = f'{savedir}/{start_point + p / SAMPLE_RATE:.3f}_0_{fm_scores[j][0]:.2f}'
+            fig1.savefig(f'{base}.png', dpi=300, bbox_inches="tight")
+            # plt.subplots_adjust(left=0.1, right=0.9, top=0.9, bottom=0.1)
+            # fig2.savefig(f'{base}_q_transforms.png', dpi=300, bbox_inches="tight")
+            plt.close(fig1)
+            # plt.close(fig2)
+
+            # Save data
+            np.savez(
+                f"{base}.npz",
+                {
+                    "strain": [strain_ts, strain_chunks[j]],
+                    "gwak_values": [1000 * quak_evals_ts, smoothed_scores[loudest - left_edge:loudest + right_edge] - bias_value],
+                    "H_qtransform": [t * 1000, f, np.array(H_hq).T],
+                    "L_qtransform": [t * 1000, f, np.array(L_hq).T],
+                }
+            )
+            print('SAVED', base)
 
 def main(args):
     try:
@@ -465,19 +517,60 @@ def main(args):
         get_evals(data, trained_path, args.savedir, int(A), [H, L])
         assert 0
 
-    f_segments = 'output/done_O3a_segments.npy'
+    f_segments = 'paperO3a/done_O3a_segments.npy'
     if not os.path.exists(f_segments):
         np.save(f_segments, np.array([0]))
 
-    for a, b in valid_segments:
-        done_segments = np.load(f_segments)
-        As = np.arange(a, b, 3600)
-        for A in As:
+    anomaly_start_times = [
+        # (1239155734.182, -1.1),
+        # (1240878400.307, -2.31),
+        (1241104246.749, -1.8),
+        # (1241624696.55, -1.03),
+        # (1242442957.423, -2.69),
+        # (1242459847.413, -1.12),
+        # (1242827473.37, -1.13),
+        (1243305662.931, -6.0),
+        # (1245998824.997, -1.03),
+        # (1246417246.823, -1.21),
+        # (1246487209.308, -3.59),
+        # (1247281292.53, -1.01),
+        # (1248280604.554, -1.11),
+        # (1249035984.212, -1.35),
+        # (1249635282.359, -1.49),
+        # (1250981809.437, -1.4),
+        # (1251009253.724, -4.76),
+        # (1252679441.276, -1.09),
+        # (1252833818.202, -1.11),
+        # (1253638396.336, -1.4),
+        # (1257416710.328, -1.21),
+        # (1260164266.18, -1.1),
+        # (1260358297.149, -1.01),
+        # (1260825537.025, -1.75),
+        # (1261020945.101, -1.03),
+        # (1262203609.392, -3.98),
+        # (1263013357.045, -6.49),
+        # (1264316106.385, -1.55),
+        # (1264683185.946, -1.04),
+        # (1266473981.889, -1.02),
+        # (1267610448.007, -1.92),
+        # (1267610483.017, -6.13),
+        # (1267617688.034, -5.61),
+        # (1267878076.354, -5.74),
+        # (1269242528.39, -2.0)
+        (1251009253.724, -5)
+        (1263013367.055, -5)
+        ]
+
+
+    for A, _ in anomaly_start_times:
+            # done_segments = np.load(f_segments)
+        # As = np.arange(a, b, 3600)
+        # for A in As:
             B = A + 3600
-            if B > b: continue
-            if A in done_segments and B in done_segments:
-                print("already finished,", A, B)
-                continue
+            # if B > b: continue
+            # if A in done_segments and B in done_segments:
+            #     print("already finished,", A, B)
+            #     continue
 
             print("Working on", A, B)
             H, L = whiten_bandpass_resample(A, B)
@@ -485,14 +578,14 @@ def main(args):
             data = np.vstack([np.array(H.data), np.array(L.data)])
             if data.shape[-1] < 1e5: return None
             get_evals(data, trained_path, args.savedir, int(A), [H, L])
-            np.save(f_segments, np.concatenate((done_segments, [A], [B])))
+            # np.save(f_segments, np.concatenate((done_segments, [A], [B])))
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Required arguments
-    parser.add_argument('--savedir', type=str, default='output/paperO3a',
+    parser.add_argument('--savedir', type=str, default='paperO3a',
                         help='File with valid segments')
 
     args = parser.parse_args()
