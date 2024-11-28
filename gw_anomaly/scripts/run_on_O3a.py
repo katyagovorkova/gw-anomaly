@@ -5,6 +5,7 @@ import torch
 from gwpy.timeseries import TimeSeries
 from astropy import units as u
 import matplotlib.pyplot as plt
+plt.rcParams['axes.grid'] = False
 from models import LinearModel, GwakClassifier
 from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 from evaluate_data import full_evaluation
@@ -34,7 +35,7 @@ class BasedModel(nn.Module):
         self.layer2_1 = nn.Linear(1, 1)
         self.layer2_2 = nn.Linear(1, 1)
         self.layer2_3 = nn.Linear(1, 1)
-        
+
         self.activation = nn.Sigmoid()
 
     def forward(self, x):
@@ -195,15 +196,13 @@ def extract_chunks(strain_data, timeslide_num, important_points, device,
 
     return fill_strains, edge_check_passed
 
-def whiten_bandpass_resample(
+def rwb(
         start_point,
         end_point,
         sample_rate=SAMPLE_RATE,
         bandpass_low=BANDPASS_LOW,
         bandpass_high=BANDPASS_HIGH,
         shift=None):
-
-    device = torch.device(GPU_NAME)
 
     try:
         start_point, end_point = int(start_point)-20, int(end_point)-20
@@ -222,6 +221,33 @@ def whiten_bandpass_resample(
         return [strainH1, strainL1]
     except:
         return None, None
+
+def rbw(
+        start_point,
+        end_point,
+        sample_rate=SAMPLE_RATE,
+        bandpass_low=BANDPASS_LOW,
+        bandpass_high=BANDPASS_HIGH,
+        shift=None):
+
+    try:
+        start_point, end_point = int(start_point)-20, int(end_point)-20
+        strainL1 = TimeSeries.fetch_open_data(f'L1', start_point, end_point)
+        strainH1 = TimeSeries.fetch_open_data(f'H1', start_point, end_point)
+
+        t0 = int(strainL1.t0 / u.s)
+
+        # Whiten, bandpass, and resample
+        strainL1 = strainL1.resample(sample_rate)
+        strainL1 = strainL1.bandpass(bandpass_low, bandpass_high).whiten()
+
+        strainH1 = strainH1.resample(sample_rate)
+        strainH1 = strainH1.bandpass(bandpass_low, bandpass_high).whiten()
+
+        return [strainH1, strainL1]
+    except:
+        return None, None
+
 
 def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
 
@@ -369,10 +395,11 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 "#daa520",  # Hanford (Goldenrod)
                 "#ff6347",  # Livingston (Tomato)
             ]
+
             # Strain plot
             strain_ts = np.linspace(0, len(strain_chunks[j, 0, :]) / SAMPLE_RATE, len(strain_chunks[j, 0, :]))
-            axs1[2].plot(strain_ts, strain_chunks[j, 0, :], label='Hanford', alpha=0.8, c="#6c5b7b")
-            axs1[2].plot(strain_ts, strain_chunks[j, 1, :], label='Livingston', alpha=0.8, c="#f29e4c")
+            axs1[2].plot(strain_ts, gwpy_timeseries[0][midpoints[loudest]-1024:midpoints[loudest]+1024], label='Hanford', alpha=0.8, c="#6c5b7b")
+            axs1[2].plot(strain_ts, gwpy_timeseries[1][midpoints[loudest]-1024:midpoints[loudest]+1024], label='Livingston', alpha=0.8, c="#f29e4c")
             axs1[2].set_ylabel('Strain', fontsize=14)
             axs1[2].legend()
             # axs1[0].set_title(f'GPS time: {start_point + midpoints[loudest] / SAMPLE_RATE + hour_split * eval_at_once_len:.1f}')
@@ -511,7 +538,7 @@ def main(args):
         A = 1241104246.7490
         B = A + 3600
 
-        H, L = whiten_bandpass_resample(A, B)
+        H, L = rwb(A, B)
         data = np.vstack([np.array(H.data), np.array(L.data)])
 
         get_evals(data, trained_path, args.savedir, int(A), [H, L])
@@ -557,28 +584,22 @@ def main(args):
         # (1267617688.034, -5.61),
         # (1267878076.354, -5.74),
         # (1269242528.39, -2.0)
-        (1251009253.724, -5)
+        (1251009253.724, -5),
         (1263013367.055, -5)
         ]
 
 
     for A, _ in anomaly_start_times:
-            # done_segments = np.load(f_segments)
-        # As = np.arange(a, b, 3600)
-        # for A in As:
             B = A + 3600
-            # if B > b: continue
-            # if A in done_segments and B in done_segments:
-            #     print("already finished,", A, B)
-            #     continue
 
             print("Working on", A, B)
-            H, L = whiten_bandpass_resample(A, B)
+            H, L = rwb(A, B)
+            H_rbw, L_rbw = rbw(A, B)
+
             if H is None and L is None: continue
             data = np.vstack([np.array(H.data), np.array(L.data)])
             if data.shape[-1] < 1e5: return None
-            get_evals(data, trained_path, args.savedir, int(A), [H, L])
-            # np.save(f_segments, np.concatenate((done_segments, [A], [B])))
+            get_evals(data, trained_path, args.savedir, int(A), [H_rbw, L_rbw])
 
 
 if __name__ == '__main__':

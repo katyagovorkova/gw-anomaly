@@ -522,6 +522,7 @@ def make_roc_curves(
 
     axs.set_ylabel('Fraction of events detected at FAR 1/year', fontsize=20)
     #print(528, bias)
+    data_for_plotting = dict()
     for k in range(len(datas)):
         data = datas[k]
         amp_measure = amp_measures[k]
@@ -582,14 +583,19 @@ def make_roc_curves(
                 am_bin_detected[insert_location] += 1
 
         TPRs = []
+        TPRs_errors = []
         snr_bins_plot = []
         for i in range(nbins):
             if am_bin_total[i] != 0:
-                TPRs.append(am_bin_detected[i]/am_bin_total[i])
+                TPR = am_bin_detected[i]/am_bin_total[i]
+                TPRs.append(TPR)
+                TPRs_errors.append( np.sqrt(TPR * (1 - TPR) / am_bin_total[i]) )
                 snr_bins_plot.append(am_bins[i]) #only adding it if nonzero total in that bin
 
         axs.plot(snr_bins_plot, TPRs, label=tag, c=colors[tag])
+        data_for_plotting[tag] = [snr_bins_plot, TPRs, TPRs_errors]
 
+    np.savez('scripts/plots/eff_after_heuristics.npz', **data_for_plotting)
     axs.legend()
     plt.grid(True)
     fig.tight_layout()
