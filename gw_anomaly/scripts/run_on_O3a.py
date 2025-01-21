@@ -374,6 +374,9 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
         bias_value = bias_value.cpu().numpy()
         smoothed_scores = smoothed_scores.cpu().numpy()
 
+        # fontsize
+        fs = 18
+
         for j in range(len(gwak_values)):
             fig1, axs1 = plt.subplots(4, 1, figsize=(10, 12) ) #, sharex=True)  # Strain and GWAK values (shared x-axis)
             # fig2, axs2 = plt.subplots(2, 1, figsize=(10, 8), sharex=True, constrained_layout=True)  # Hanford and Livingston Q-transforms (shared y-axis)
@@ -400,8 +403,8 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             strain_ts = np.linspace(0, len(strain_chunks[j, 0, :]) / SAMPLE_RATE, len(strain_chunks[j, 0, :]))
             axs1[2].plot(strain_ts, gwpy_timeseries[0][midpoints[loudest]-1024:midpoints[loudest]+1024], label='Hanford', alpha=0.8, c="#6c5b7b")
             axs1[2].plot(strain_ts, gwpy_timeseries[1][midpoints[loudest]-1024:midpoints[loudest]+1024], label='Livingston', alpha=0.8, c="#f29e4c")
-            axs1[2].set_ylabel('Strain', fontsize=14)
-            axs1[2].legend()
+            axs1[2].set_ylabel('Strain', fontsize=fs)
+            axs1[2].legend(fontsize=fs-2)
             # axs1[0].set_title(f'GPS time: {start_point + midpoints[loudest] / SAMPLE_RATE + hour_split * eval_at_once_len:.1f}')
             # Remove x-axis ticks
             axs1[2].tick_params(axis='x', which='both', bottom=False, top=False)
@@ -423,9 +426,9 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 label='Final metric',
                 c='black'
             )
-            axs1[3].set_xlabel("Time (ms)", fontsize=14)
-            axs1[3].set_ylabel("Final metric contributions", fontsize=14)
-            axs1[3].legend()
+            axs1[3].set_xlabel("Time (ms)", fontsize=fs)
+            axs1[3].set_ylabel("Final metric contributions", fontsize=fs)
+            axs1[3].legend(fontsize=fs-2)
 
             # Define a custom colormap with pink in the middle
             custom_cmap = LinearSegmentedColormap.from_list("custom_cmap", ["#1f77b4", "#f4a3c1", "#ffd700"], N=256)
@@ -468,7 +471,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 shading="auto"
             )
             axs1[0].set_yscale("log")
-            axs1[0].set_ylabel("Frequency (Hz)", fontsize=14)
+            axs1[0].set_ylabel("Frequency (Hz)", fontsize=fs)
             # axs1[1].set_title("Hanford Q-Transform", fontsize=14)
             axs1[1].tick_params(axis='x', which='both', bottom=False, top=False)
             axs1[0].tick_params(axis='x', which='both', bottom=False, top=False)
@@ -486,7 +489,7 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
             )
             axs1[1].set_yscale("log")
             # axs1[1].set_xlabel("Time (ms)", fontsize=12)
-            axs1[1].set_ylabel("Frequency (Hz)", fontsize=14)
+            axs1[1].set_ylabel("Frequency (Hz)", fontsize=fs)
             # axs1[1].set_title("Livingston Q-Transform", fontsize=14)
 
             # Add shared colorbar
@@ -496,14 +499,16 @@ def get_evals(data_, model_path, savedir, start_point, gwpy_timeseries):
                 location="top",
                 pad=0.05,
                 # shrink=0.9,
-                aspect=30
+                aspect=30,
             )
-            cbar.set_label("Spectral Power", fontsize=12)
+            # Set colorbar tick size
+            cbar.ax.tick_params(labelsize=fs)
 
             # Adjust layout
             fig1.tight_layout()
 
-
+            for i in range(4):
+                axs1[i].tick_params(axis='both', labelsize=fs)
 
             # Save figures
             base = f'{savedir}/{start_point + p / SAMPLE_RATE:.3f}_0_{fm_scores[j][0]:.2f}'
@@ -606,7 +611,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # Required arguments
-    parser.add_argument('--savedir', type=str, default='paperO3a',
+    parser.add_argument('--savedir', type=str, default='paperO3a_check',
                         help='File with valid segments')
 
     args = parser.parse_args()

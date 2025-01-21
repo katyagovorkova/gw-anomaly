@@ -1,87 +1,97 @@
+import numpy as np
+import os
 import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
-import datetime
+from matplotlib.colors import LinearSegmentedColormap, TwoSlopeNorm
 
-# Primary data
-data_primary = {
-    "x": [
-        "2019-04-03T18:31:01.203Z", "2019-04-13T01:55:34.182Z", "2019-04-23T10:35:19.504Z",
-        "2019-05-05T15:10:46.749Z", "2019-05-11T15:44:56.550Z", "2019-05-21T03:02:37.423Z",
-        "2019-05-25T13:51:13.370Z", "2019-07-06T03:00:46.823Z", "2019-07-06T22:26:49.308Z",
-        "2019-07-27T16:36:44.554Z", "2019-08-05T10:26:24.212Z", "2019-08-11T03:27:44.698Z",
-        "2019-08-12T08:54:42.359Z", "2019-08-27T22:56:49.437Z", "2019-08-28T06:34:13.724Z",
-        "2019-09-02T09:40:08.280Z", "2019-09-05T09:12:34.822Z", "2019-09-27T16:53:16.324Z",
-        "2019-12-13T07:40:00.160Z", "2019-12-13T16:05:09.723Z", "2019-12-19T21:19:07.025Z",
-        "2019-12-22T09:26:37.068Z", "2020-01-10T07:24:34.813Z", "2020-01-24T13:07:15.191Z",
-        "2020-02-16T02:02:52.554Z"
-    ],
-    "y": [
-        -1.30, -1.03, -1.02, -1.64, -1.08, -2.20, -1.11, -1.06, -2.48, -1.22, -1.10, -2.02,
-        -1.65, -1.16, -4.23, -1.02, -1.05, -1.54, -1.45, -1.17, -1.69, -1.58, -1.18, -1.23, -1.07
-    ],
-}
+# Define the directory where saved data is stored
+DATA_DIR = "paperO3a"
 
-# Secondary data
-data_secondary = {
-    "x": [
-        "2019-05-03T00:26:40.307Z", "2019-05-31T02:41:02.931Z", "2019-12-08T15:05:57.679Z",
-        "2019-12-12T05:37:56.434Z", "2020-01-02T12:15:42.682Z", "2020-01-04T20:06:59.401Z",
-        "2020-01-14T05:02:47.055Z", "2020-01-29T06:55:16.395Z"
-    ],
-    "y": [
-        -1.71, -5.79, -1.85, -1.08, -3.18, -1.17, -6.70, -1.55
-    ],
-}
+# Ensure the directory exists
+if not os.path.exists(DATA_DIR):
+    raise ValueError(f"Directory '{DATA_DIR}' does not exist.")
 
-# Metric-to-FAR mapping
-metric_to_far = {
-    -1.065: "1/day",
-    -2.153: "1/week",
-    -3.299: "1/month",
-    -4.849: "1/year",
-    -6.725: "1/10 years",
-    -8.498: "1/100 years"
-}
+# List of specific .npz files to process
+npz_files = [
+    "1241104276.737_0_-1.86.npz",
+    "1251009283.725_0_-4.77.npz",
+    "1263013387.044_0_-7.33.npz",
+    "1243305692.933_0_-4.50.npz"
+]
 
-# Generate FAR labels for y-axis
-metric_levels = sorted(metric_to_far.keys())
-far_labels = [metric_to_far[m] for m in metric_levels]
+# Define custom colormap for Q-transforms
+custom_cmap = LinearSegmentedColormap.from_list("custom_cmap", ["#1f77b4", "#f4a3c1", "#ffd700"], N=256)
+vmin, vcenter, vmax = 0, 12.5, 25  # Pink at 12.5, scale from 0 to 25
+norm = TwoSlopeNorm(vmin=vmin, vcenter=vcenter, vmax=vmax)
 
-# Convert x data to datetime objects
-x_primary = [datetime.datetime.fromisoformat(ts.replace("Z", "")) for ts in data_primary["x"]]
-x_secondary = [datetime.datetime.fromisoformat(ts.replace("Z", "")) for ts in data_secondary["x"]]
+# Define labels and colors
+labels = [
+    'Background', 'Background', 'BBH', 'BBH', 'Glitch', 'Glitch',
+    'SG (64-512 Hz)', 'SG (64-512 Hz)', 'SG (512-1024 Hz)', 'SG (512-1024 Hz)', 'Frequency correlation'
+]
+colors = [
+    "#f4a3c1", "#ffd700", "#2a9d8f", "#708090", "#00bfff",
+    "#cd5c5c", "#006400", "#daa520", "#ff6347", "black"
+]
 
-# Extract y values
-y_primary = data_primary["y"]
-y_secondary = data_secondary["y"]
+# Process each saved file
+for npz_file in npz_files:
+    file_path = os.path.join(DATA_DIR, npz_file)
 
-# Plot
-plt.figure(figsize=(10, 6))
+    if not os.path.exists(file_path):
+        print(f"Warning: {npz_file} not found in {DATA_DIR}. Skipping.")
+        continue
 
-# Primary data in blue
-plt.scatter(x_primary, y_primary, color="blue", label="Primary Detections", alpha=0.8)
+    data = np.load(file_path, allow_pickle=True)['arr_0'].item()
 
-# Secondary data in orange
-plt.scatter(x_secondary, y_secondary, color="orange", label="Secondary Detections", alpha=0.8)
+    # Extract data
+    strain_ts, strain_chunks = data["strain"]
+    gwak_time, gwak_values = data["gwak_values"]
+    t_H, f_H, H_qtransform = data["H_qtransform"]
+    t_L, f_L, L_qtransform = data["L_qtransform"]
 
-# Set y-axis to logarithmic scale
-plt.yscale("log")
-plt.gca().invert_yaxis()  # FAR decreases downward
-plt.yticks(metric_levels, far_labels)  # Map y-axis ticks to FAR labels
+    # Create figure and subplots
+    fig, axs = plt.subplots(4, 1, figsize=(10, 12))
 
-# Set x-axis format for better readability
-plt.gca().xaxis.set_major_formatter(mdates.DateFormatter("%b %Y"))
-plt.gca().xaxis.set_major_locator(mdates.MonthLocator(interval=1))
-plt.gcf().autofmt_xdate()
+    # Hanford Q-transform
+    im_H = axs[0].pcolormesh(
+        t_H, f_H, H_qtransform, cmap=custom_cmap, norm=norm, shading="auto"
+    )
+    axs[0].set_yscale("log")
+    axs[0].set_ylabel("Frequency (Hz)", fontsize=14)
+    axs[0].tick_params(axis='x', which='both', bottom=False, top=False)
+    axs[0].set_xticklabels([])
 
-# Add labels and title
-plt.xlabel("Date")
-plt.ylabel("FAR (Metric Threshold)")
-plt.title("O3 GWAK Detections: Logarithmic Metric vs. Date")
+    # Livingston Q-transform
+    im_L = axs[1].pcolormesh(
+        t_L, f_L, L_qtransform, cmap=custom_cmap, norm=norm, shading="auto"
+    )
+    axs[1].set_yscale("log")
+    axs[1].set_ylabel("Frequency (Hz)", fontsize=14)
+    axs[1].tick_params(axis='x', which='both', bottom=False, top=False)
+    axs[1].set_xticklabels([])
 
-# Show legend
-plt.legend()
+    # Strain Time Series Plot
+    axs[2].plot(strain_ts, strain_chunks[0], label='Hanford', alpha=0.8, c="#6c5b7b")
+    axs[2].plot(strain_ts, strain_chunks[1], label='Livingston', alpha=0.8, c="#f29e4c")
+    axs[2].set_ylabel('Strain', fontsize=14)
+    axs[2].legend()
+    axs[2].tick_params(axis='x', which='both', bottom=False, top=False)
+    axs[2].set_xticklabels([])
 
-# Display plot
-plt.tight_layout()
-plt.show()
+    # GWAK Evaluation Plot
+    axs[3].plot(gwak_time, gwak_values, label="Final Metric", c="black")
+    axs[3].set_xlabel("Time (ms)", fontsize=14)
+    axs[3].set_ylabel("Final Metric Contributions", fontsize=14)
+    axs[3].legend()
+
+    # Add shared colorbar
+    cbar = fig.colorbar(im_H, ax=axs[0], location="top", pad=0.05, aspect=30)
+    cbar.set_label("Spectral Power", fontsize=12)
+
+    # Save figure
+    save_path = os.path.join(DATA_DIR, f"{os.path.splitext(npz_file)[0]}.png")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
+    print(f"Saved plot: {save_path}")
